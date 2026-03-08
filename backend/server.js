@@ -26,8 +26,13 @@ initializeFinBERT();
 initializeGemini();
 
 // Middleware
-app.use(cors());
-app.use(express.json());
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+app.use(express.json({ limit: '10mb' })); // Support image uploads in LLM chat
 
 // Routes
 app.use('/api/news', newsRoutes);
