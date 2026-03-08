@@ -239,6 +239,50 @@ NEWSDATA_API_KEY=your_newsdata_api_key_here
 
 ---
 
+## 🤖 ML Model Setup (FinBERT Sentiment Analysis)
+
+The project uses **FinBERT** for financial sentiment analysis, but the model files (~418 MB) are **NOT included** in the repository due to GitHub size limits.
+
+### Download & Setup FinBERT Model
+
+**Option 1: Download Pre-trained Model (Recommended)**
+
+```powershell
+# Navigate to backend
+cd "C:\Ashish\Technology\Major Project\backend"
+
+# Install Python dependencies
+pip install -r ml_model/requirements.txt
+
+# Download FinBERT model using Python
+python -c "from transformers import AutoModelForSequenceClassification, AutoTokenizer; model_name='ProsusAI/finbert'; model = AutoModelForSequenceClassification.from_pretrained(model_name); tokenizer = AutoTokenizer.from_pretrained(model_name); model.save_pretrained('ml_model/finbert_model'); tokenizer.save_pretrained('ml_model/finbert_model')"
+```
+
+**Option 2: Manual Download**
+
+1. Visit: https://huggingface.co/ProsusAI/finbert
+2. Download all model files
+3. Place in: `backend/ml_model/finbert_model/`
+
+**Required Model Files:**
+- `config.json`
+- `model.safetensors` (417.67 MB)
+- `tokenizer.json`
+- `tokenizer_config.json`
+- `vocab.txt`
+- `special_tokens_map.json`
+
+### Python Dependencies
+
+```powershell
+# Install required packages
+pip install torch transformers
+```
+
+**Note:** The ML model is optional. If not installed, the app will use basic keyword-based sentiment analysis as fallback.
+
+---
+
 ## 🚀 Production Build
 
 ### Frontend

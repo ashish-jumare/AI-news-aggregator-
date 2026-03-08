@@ -44,18 +44,19 @@ build/
 *.h5
 *.ckpt
 *.safetensors
-*.onnx
-*.pb
-*.tflite
-
-# ML Model directories
 backend/ml_model/finbert_model/
-**/models/saved_models/
-**/checkpoints/
+**/finbert_model/
+
+# Large packages
+package-lock.json
+**/package-lock.json
 
 # Database
 *.db
 *.sqlite
+
+# Configuration guide (contains sensitive info)
+ENV_CONFIGURATION_GUIDE.md
 
 # Temporary files
 *.tmp
