@@ -43,6 +43,15 @@ build/
 *.pt
 *.h5
 *.ckpt
+*.safetensors
+*.onnx
+*.pb
+*.tflite
+
+# ML Model directories
+backend/ml_model/finbert_model/
+**/models/saved_models/
+**/checkpoints/
 
 # Database
 *.db
