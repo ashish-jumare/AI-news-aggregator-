@@ -433,11 +433,11 @@ export default function LLMChatPage({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 flex h-screen w-screen bg-gray-900 text-white overflow-hidden z-50">
+    <div className="fixed inset-0 flex h-screen w-screen bg-slate-50 text-slate-900 dark:bg-gray-900 dark:text-white overflow-hidden z-50">
       {/* Sidebar */}
-      <div className={`${showSidebar ? 'w-64' : 'w-0'} bg-gray-950 border-r border-gray-800 flex flex-col transition-all duration-300 overflow-hidden`}>
+      <div className={`${showSidebar ? 'w-64' : 'w-0'} bg-white dark:bg-gray-950 border-r border-slate-200 dark:border-gray-800 flex flex-col transition-all duration-300 overflow-hidden`}>
         {/* Sidebar Header */}
-        <div className="p-4 border-b border-gray-800">
+        <div className="p-4 border-b border-slate-200 dark:border-gray-800">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -449,7 +449,7 @@ export default function LLMChatPage({ onClose }) {
           
           <button
             onClick={handleNewChat}
-            className="w-full flex items-center gap-2 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+            className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-gray-800 dark:hover:bg-gray-700 rounded-lg transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -466,17 +466,17 @@ export default function LLMChatPage({ onClose }) {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search chats"
-              className="w-full bg-gray-800 text-white placeholder-gray-500 px-3 py-2 pl-9 rounded-lg text-sm outline-none focus:ring-2 focus:ring-gray-600 transition-all"
+              className="w-full bg-slate-100 text-slate-900 placeholder-slate-400 px-3 py-2 pl-9 rounded-lg text-sm outline-none focus:ring-2 focus:ring-slate-300 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500 dark:focus:ring-gray-600 transition-all"
             />
-            <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-700 rounded transition-colors"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-200 dark:hover:bg-gray-700 rounded transition-colors"
               >
-                <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3 h-3 text-slate-400 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
@@ -490,7 +490,7 @@ export default function LLMChatPage({ onClose }) {
             onClick={handleShowImages}
             disabled={isLoadingImages}
             className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
-              showImagesGallery ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800'
+              showImagesGallery ? 'bg-slate-100 text-slate-900 dark:bg-gray-800 dark:text-white' : 'text-slate-500 hover:bg-slate-100 dark:text-gray-400 dark:hover:bg-gray-800'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             {isLoadingImages ? (
@@ -509,7 +509,7 @@ export default function LLMChatPage({ onClose }) {
 
         {/* Chat History */}
         <div className="flex-1 overflow-y-auto px-3 mt-4">
-          <div className="text-xs text-gray-500 px-3 mb-2 font-medium">
+          <div className="text-xs text-slate-500 dark:text-gray-500 px-3 mb-2 font-medium">
             {searchQuery ? `Search results for "${searchQuery}"` : 'Your chats'}
           </div>
           <div className="space-y-1">
@@ -522,11 +522,11 @@ export default function LLMChatPage({ onClose }) {
               if (filteredChats.length === 0 && searchQuery) {
                 return (
                   <div className="text-center py-8 px-3">
-                    <svg className="w-12 h-12 mx-auto text-gray-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-12 h-12 mx-auto text-slate-400 dark:text-gray-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
-                    <p className="text-sm text-gray-400">No chats found</p>
-                    <p className="text-xs text-gray-500 mt-1">Try a different search term</p>
+                    <p className="text-sm text-slate-500 dark:text-gray-400">No chats found</p>
+                    <p className="text-xs text-slate-400 dark:text-gray-500 mt-1">Try a different search term</p>
                   </div>
                 );
               }
@@ -534,8 +534,8 @@ export default function LLMChatPage({ onClose }) {
               if (filteredChats.length === 0) {
                 return (
                   <div className="text-center py-8 px-3">
-                    <p className="text-sm text-gray-400">No chats yet</p>
-                    <p className="text-xs text-gray-500 mt-1">Start a new conversation</p>
+                    <p className="text-sm text-slate-500 dark:text-gray-400">No chats yet</p>
+                    <p className="text-xs text-slate-400 dark:text-gray-500 mt-1">Start a new conversation</p>
                   </div>
                 );
               }
@@ -545,26 +545,26 @@ export default function LLMChatPage({ onClose }) {
                 key={chat._id}
                 onClick={() => handleChatSelect(chat._id)}
                 className={`group relative flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
-                  currentChatId === chat._id ? 'bg-gray-800' : 'hover:bg-gray-800'
+                  currentChatId === chat._id ? 'bg-slate-100 dark:bg-gray-800' : 'hover:bg-slate-100 dark:hover:bg-gray-800'
                 }`}
               >
                 <span className="flex-1 text-sm truncate">{chat.title}</span>
                 <div className="hidden group-hover:flex items-center gap-1">
                   <button
                     onClick={(e) => handlePinChat(chat._id, e)}
-                    className="p-1 hover:bg-gray-700 rounded"
+                    className="p-1 hover:bg-slate-200 dark:hover:bg-gray-700 rounded"
                     title={chat.pinned ? 'Unpin' : 'Pin'}
                   >
-                    <svg className={`w-3 h-3 ${chat.pinned ? 'text-blue-400' : 'text-gray-400'}`} fill="currentColor" viewBox="0 0 20 20">
+                    <svg className={`w-3 h-3 ${chat.pinned ? 'text-blue-500 dark:text-blue-400' : 'text-slate-400 dark:text-gray-400'}`} fill="currentColor" viewBox="0 0 20 20">
                       <path d="M10 2a1 1 0 011 1v1.323l3.954 1.582 1.599-.8a1 1 0 01.894 1.79l-1.233.616 1.738 5.42a1 1 0 01-.285 1.05A3.989 3.989 0 0115 15a3.989 3.989 0 01-2.667-1.019 1 1 0 01-.285-1.05l1.738-5.42-1.233-.617a1 1 0 01.894-1.788l1.599.799L11 4.323V3a1 1 0 011-1zm-5 8.274l-.818 2.552c-.25.78-.03 1.61.548 2.112A3.989 3.989 0 007.5 16H9v2a1 1 0 102 0v-2h1.5a3.989 3.989 0 002.77-1.062c.578-.502.798-1.332.548-2.112L15 10.274V6.5a1 1 0 10-2 0v3.274l-.818 2.552c-.25.78-.03 1.61.548 2.112.578.502 1.331.562 2.022.602a2.003 2.003 0 01-.784.62A2 2 0 0113.5 16H11v2a1 1 0 11-2 0v-2H7.5a2 2 0 01-1.468-.64 2.003 2.003 0 01-.784-.62c.691-.04 1.444-.1 2.022-.602.578-.502.798-1.332.548-2.112L7 9.774V6.5a1 1 0 10-2 0v3.774z" />
                     </svg>
                   </button>
                   <button
                     onClick={(e) => handleDeleteChat(chat._id, e)}
-                    className="p-1 hover:bg-gray-700 rounded"
+                    className="p-1 hover:bg-slate-200 dark:hover:bg-gray-700 rounded"
                     title="Delete"
                   >
-                    <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3 h-3 text-slate-400 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
                   </button>
@@ -576,8 +576,8 @@ export default function LLMChatPage({ onClose }) {
         </div>
 
         {/* User Profile */}
-        <div className="p-3 border-t border-gray-800">
-          <div className="flex items-center gap-3 px-3 py-2 hover:bg-gray-800 rounded-lg cursor-pointer transition-colors">
+        <div className="p-3 border-t border-slate-200 dark:border-gray-800">
+          <div className="flex items-center gap-3 px-3 py-2 hover:bg-slate-100 dark:hover:bg-gray-800 rounded-lg cursor-pointer transition-colors">
             <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-sm font-semibold">
               {user?.profilePicture ? (
                 <img src={user.profilePicture} alt="Profile" className="w-full h-full rounded-full" />
@@ -587,20 +587,20 @@ export default function LLMChatPage({ onClose }) {
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium truncate">{user?.fullName || 'User'}</div>
-              <div className="text-xs text-gray-400">Go</div>
+              <div className="text-xs text-slate-500 dark:text-gray-400">Go</div>
             </div>
           </div>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col bg-gray-900">
+      <div className="flex-1 flex flex-col bg-slate-50 dark:bg-gray-900">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-gray-800">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 dark:border-gray-800">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowSidebar(!showSidebar)}
-              className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+              className="p-2 hover:bg-slate-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -608,8 +608,8 @@ export default function LLMChatPage({ onClose }) {
             </button>
             <div className="flex items-center gap-2">
               <span className="text-lg font-medium">TradeGPT</span>
-              <span className="text-sm text-gray-400">7.1</span>
-              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <span className="text-sm text-slate-500 dark:text-gray-400">7.1</span>
+              <svg className="w-4 h-4 text-slate-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </div>
@@ -617,7 +617,7 @@ export default function LLMChatPage({ onClose }) {
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
-              className="p-2 hover:bg-gray-800 rounded-lg transition-colors text-gray-400 hover:text-white"
+              className="p-2 hover:bg-slate-100 dark:hover:bg-gray-800 rounded-lg transition-colors text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
               title="Back to News"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -638,16 +638,16 @@ export default function LLMChatPage({ onClose }) {
               
               {allImages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16">
-                  <svg className="w-24 h-24 text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-24 h-24 text-slate-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                  <h3 className="text-xl font-medium text-gray-300 mb-2">No images yet</h3>
-                  <p className="text-gray-500">Upload images in your conversations to see them here</p>
+                  <h3 className="text-xl font-medium text-slate-700 dark:text-gray-300 mb-2">No images yet</h3>
+                  <p className="text-slate-500 dark:text-gray-500">Upload images in your conversations to see them here</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                   {allImages.map((image, index) => (
-                    <div key={index} className="group relative aspect-square overflow-hidden rounded-lg bg-gray-800 border border-gray-700 hover:border-gray-600 transition-all">
+                    <div key={index} className="group relative aspect-square overflow-hidden rounded-lg bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 hover:border-slate-300 dark:hover:border-gray-600 transition-all">
                       <img
                         src={image.data}
                         alt={image.name || `Image ${index + 1}`}
@@ -675,21 +675,21 @@ export default function LLMChatPage({ onClose }) {
               
               {/* Suggestion Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl w-full mb-8">
-                <button className="p-4 bg-gray-800 hover:bg-gray-750 rounded-xl text-left transition-colors border border-gray-700">
+                <button className="p-4 bg-white hover:bg-slate-50 dark:bg-gray-800 dark:hover:bg-gray-700 rounded-xl text-left transition-colors border border-slate-200 dark:border-gray-700">
                   <div className="font-medium mb-1">Analyze sentiment</div>
-                  <div className="text-sm text-gray-400">of news articles about a company</div>
+                  <div className="text-sm text-slate-500 dark:text-gray-400">of news articles about a company</div>
                 </button>
-                <button className="p-4 bg-gray-800 hover:bg-gray-750 rounded-xl text-left transition-colors border border-gray-700">
+                <button className="p-4 bg-white hover:bg-slate-50 dark:bg-gray-800 dark:hover:bg-gray-700 rounded-xl text-left transition-colors border border-slate-200 dark:border-gray-700">
                   <div className="font-medium mb-1">Summarize trends</div>
-                  <div className="text-sm text-gray-400">in recent company news</div>
+                  <div className="text-sm text-slate-500 dark:text-gray-400">in recent company news</div>
                 </button>
-                <button className="p-4 bg-gray-800 hover:bg-gray-750 rounded-xl text-left transition-colors border border-gray-700">
+                <button className="p-4 bg-white hover:bg-slate-50 dark:bg-gray-800 dark:hover:bg-gray-700 rounded-xl text-left transition-colors border border-slate-200 dark:border-gray-700">
                   <div className="font-medium mb-1">Compare companies</div>
-                  <div className="text-sm text-gray-400">based on news sentiment</div>
+                  <div className="text-sm text-slate-500 dark:text-gray-400">based on news sentiment</div>
                 </button>
-                <button className="p-4 bg-gray-800 hover:bg-gray-750 rounded-xl text-left transition-colors border border-gray-700">
+                <button className="p-4 bg-white hover:bg-slate-50 dark:bg-gray-800 dark:hover:bg-gray-700 rounded-xl text-left transition-colors border border-slate-200 dark:border-gray-700">
                   <div className="font-medium mb-1">Generate insights</div>
-                  <div className="text-sm text-gray-400">from Twitter discussions</div>
+                  <div className="text-sm text-slate-500 dark:text-gray-400">from Twitter discussions</div>
                 </button>
               </div>
             </div>
@@ -726,10 +726,10 @@ export default function LLMChatPage({ onClose }) {
                       <div className={`inline-block px-4 py-3 rounded-2xl ${
                         message.role === 'user' 
                           ? 'bg-blue-600 text-white' 
-                          : 'bg-gray-800 text-gray-100'
+                          : 'bg-white text-slate-900 dark:bg-gray-800 dark:text-gray-100'
                       }`}>
                         {message.role === 'assistant' ? (
-                          <div className="prose prose-invert prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                          <div className="prose prose-sm max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>
                               {message.content}
                             </ReactMarkdown>
@@ -752,11 +752,11 @@ export default function LLMChatPage({ onClose }) {
                     </svg>
                   </div>
                   <div className="flex-1">
-                    <div className="inline-block px-4 py-3 rounded-2xl bg-gray-800">
+                    <div className="inline-block px-4 py-3 rounded-2xl bg-white dark:bg-gray-800 border border-slate-200 dark:border-transparent">
                       <div className="flex gap-1">
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                        <div className="w-2 h-2 bg-slate-400 dark:bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                        <div className="w-2 h-2 bg-slate-400 dark:bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                        <div className="w-2 h-2 bg-slate-400 dark:bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                       </div>
                     </div>
                   </div>
@@ -768,7 +768,7 @@ export default function LLMChatPage({ onClose }) {
         </div>
 
         {/* Input Area */}
-        <div className="p-4 border-t border-gray-800">
+        <div className="p-4 border-t border-slate-200 dark:border-gray-800">
           <form onSubmit={handleSendMessage} className="max-w-3xl mx-auto">
             {/* Image Preview Area */}
             {selectedImages.length > 0 && (
@@ -778,7 +778,7 @@ export default function LLMChatPage({ onClose }) {
                     <img
                       src={image.data}
                       alt={image.name}
-                      className="h-20 w-20 object-cover rounded-lg border border-gray-700"
+                      className="h-20 w-20 object-cover rounded-lg border border-slate-200 dark:border-gray-700"
                     />
                     <button
                       type="button"
@@ -794,7 +794,7 @@ export default function LLMChatPage({ onClose }) {
               </div>
             )}
             
-            <div className="flex items-end gap-3 bg-gray-800 rounded-2xl p-2 border border-gray-700 focus-within:border-gray-600 transition-colors">
+            <div className="flex items-end gap-3 bg-white dark:bg-gray-800 rounded-2xl p-2 border border-slate-200 dark:border-gray-700 focus-within:border-slate-300 dark:focus-within:border-gray-600 transition-colors">
               {/* Hidden file input */}
               <input
                 ref={fileInputRef}
@@ -809,7 +809,7 @@ export default function LLMChatPage({ onClose }) {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="p-2 text-gray-400 hover:text-white transition-colors flex-shrink-0"
+                className="p-2 text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white transition-colors flex-shrink-0"
                 title="Upload images"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -827,7 +827,7 @@ export default function LLMChatPage({ onClose }) {
                   }
                 }}
                 placeholder="Ask anything"
-                className="flex-1 bg-transparent text-white placeholder-gray-500 outline-none resize-none max-h-32 py-2"
+                className="flex-1 bg-transparent text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 outline-none resize-none max-h-32 py-2"
                 rows="1"
                 style={{ minHeight: '2.5rem', overflow: 'hidden' }}
               />
@@ -838,7 +838,7 @@ export default function LLMChatPage({ onClose }) {
                 className={`p-2 transition-colors flex-shrink-0 ${
                   isRecording 
                     ? 'text-red-500 animate-pulse' 
-                    : 'text-gray-400 hover:text-white'
+                    : 'text-slate-500 hover:text-slate-900 dark:text-gray-400 dark:hover:text-white'
                 }`}
                 title={isRecording ? 'Stop recording' : 'Start voice input'}
               >
@@ -849,14 +849,14 @@ export default function LLMChatPage({ onClose }) {
               <button
                 type="submit"
                 disabled={(!inputMessage.trim() && selectedImages.length === 0) || isLoading}
-                className="p-2 bg-white text-gray-900 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                className="p-2 bg-slate-900 text-white dark:bg-white dark:text-gray-900 rounded-lg hover:bg-slate-800 dark:hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                 </svg>
               </button>
             </div>
-            <div className="text-xs text-gray-500 text-center mt-2">
+            <div className="text-xs text-slate-500 dark:text-gray-500 text-center mt-2">
               TradeGPT can make mistakes. Check important info.
             </div>
           </form>

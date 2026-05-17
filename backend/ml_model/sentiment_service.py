@@ -4,7 +4,11 @@ from pydantic import BaseModel
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch
 from typing import List, Optional
+import re
 import os
+import yfinance as yf
+from datetime import datetime, timedelta, time
+from zoneinfo import ZoneInfo
 
 app = FastAPI(
     title="FinBERT Sentiment Analysis Service",
@@ -24,6 +28,201 @@ app.add_middleware(
 # Load FinBERT model
 MODEL_PATH = './finbert_model'
 LABELS = ['negative', 'neutral', 'positive']
+
+SYMBOL_CACHE = {}
+INTRADAY_CACHE = {}
+INTRADAY_CACHE_TTL_SECONDS = 60
+def normalize_company_name(name: str) -> str:
+    normalized = name.strip().lower()
+    normalized = normalized.replace('&', 'and')
+    normalized = re.sub(r'[^a-z0-9\s]', ' ', normalized)
+    normalized = re.sub(r'\s+', ' ', normalized)
+    return normalized.strip()
+
+RAW_SYMBOL_OVERRIDES = {
+    'tata steel ltd': 'TATASTEEL.NS',
+    'tata steel': 'TATASTEEL.NS',
+    'adani energy solutions ltd': 'ADANIENSOL.NS',
+    'adani energy solution ltd': 'ADANIENSOL.NS',
+    'abb india ltd': 'ABB.NS',
+    'abb india': 'ABB.NS',
+    'adani ports and special economic zone ltd': 'ADANIPORTS.NS',
+    'apollo hospitals enterprise ltd': 'APOLLOHOSP.NS',
+    'avenue supermarts ltd': 'DMART.NS',
+    'bajaj finance ltd': 'BAJFINANCE.NS',
+    'bajaj holdings and investment ltd': 'BAJAJHLDNG.NS',
+    'bharat petroleum corporation ltd': 'BPCL.NS',
+    'cg power and industrial solutions ltd': 'CGPOWER.NS',
+    'cg power and industrial solution ltd': 'CGPOWER.NS',
+    'cholamandalam investment and finance company ltd': 'CHOLAFIN.NS',
+    'cholamandalam investment and finance company ltd eternal ltd': 'CHOLAFIN.NS',
+    'eternal ltd': 'ZOMATO.NS',
+    'hdfc life insurance company ltd': 'HDFCLIFE.NS',
+    'icici lombard general insurance company ltd': 'ICICIGI.NS',
+    'indian railway finance corporation ltd': 'IRFC.NS',
+    'infosys ltd': 'INFY.NS',
+    'jindal steel ltd': 'JINDALSTEL.NS',
+    'jio financial services ltd': 'JIOFIN.NS',
+    'ltimindtree ltd': 'LTIM.NS',
+    'lodha developers ltd': 'LODHA.NS',
+    'latha developers ltd': 'LODHA.NS',
+    'max healthcare institute ltd': 'MAXHEALTH.NS',
+    'mazagon dock shipbuilders ltd': 'MAZDOCK.NS',
+    'mazagaon dock shipbuilders ltd': 'MAZDOCK.NS',
+    'oil and natural gas corporation ltd': 'ONGC.NS',
+    'power grid corporation of india ltd': 'POWERGRID.NS',
+    'rec ltd': 'RECLTD.NS',
+    'rec limited': 'RECLTD.NS',
+    'sbi life insurance company ltd': 'SBILIFE.NS',
+    'samvardhana motherson international ltd': 'MOTHERSON.NS',
+    'shriram finance ltd': 'SHRIRAMFIN.NS',
+    'sun pharmaceutical industries ltd': 'SUNPHARMA.NS',
+    'tata consumer products ltd': 'TATACONSUM.NS',
+    'tata motors passenger vehicles ltd': 'TATAMOTORS.NS',
+    'titan company ltd': 'TITAN.NS',
+    'dr reddy s laboratories ltd': 'DRREDDY.NS',
+    'dr reddys laboratories ltd': 'DRREDDY.NS',
+    'dr reddy laboratories ltd': 'DRREDDY.NS',
+    'varun beverages ltd': 'VBL.NS',
+    'vedanta ltd': 'VEDL.NS'
+}
+SYMBOL_OVERRIDES = {
+    normalize_company_name(key): value for key, value in RAW_SYMBOL_OVERRIDES.items()
+}
+
+def choose_symbol(quotes):
+    if not quotes:
+        return None
+
+    def is_equity(quote):
+        return (quote.get('quoteType') or '').upper() == 'EQUITY'
+
+    def exchange_match(quote, exchanges):
+        return (quote.get('exchange') or '').upper() in exchanges
+
+    equities = [quote for quote in quotes if is_equity(quote)]
+    candidates = equities or quotes
+
+    preferred = next((q.get('symbol') for q in candidates if exchange_match(q, {'NSE', 'NSI'})), None)
+    if preferred:
+        return preferred
+
+    preferred = next((q.get('symbol') for q in candidates if q.get('symbol', '').endswith('.NS')), None)
+    if preferred:
+        return preferred
+
+    preferred = next((q.get('symbol') for q in candidates if exchange_match(q, {'BSE'})), None)
+    if preferred:
+        return preferred
+
+    preferred = next((q.get('symbol') for q in candidates if q.get('symbol', '').endswith('.BO')), None)
+    if preferred:
+        return preferred
+
+    return candidates[0].get('symbol') if candidates else None
+
+def resolve_symbol(company_name: str, symbol: Optional[str] = None) -> Optional[str]:
+    if symbol:
+        return symbol
+
+    if not company_name:
+        return None
+
+    normalized_name = normalize_company_name(company_name)
+    override = SYMBOL_OVERRIDES.get(normalized_name)
+    if override:
+        return override
+
+    cache_key = normalized_name
+    if cache_key in SYMBOL_CACHE:
+        return SYMBOL_CACHE[cache_key]
+
+    try:
+        search = yf.Search(company_name)
+        quotes = search.quotes or []
+        resolved = choose_symbol(quotes)
+
+        if resolved and (resolved.endswith('.NS') or resolved.endswith('.BO')):
+            SYMBOL_CACHE[cache_key] = resolved
+            return resolved
+
+        search_nse = yf.Search(f"{company_name} NSE")
+        resolved_nse = choose_symbol(search_nse.quotes or [])
+        resolved = resolved_nse or resolved
+
+        if not resolved:
+            search_bse = yf.Search(f"{company_name} BSE")
+            resolved = choose_symbol(search_bse.quotes or [])
+
+        if resolved and (resolved.endswith('.NS') or resolved.endswith('.BO')):
+            SYMBOL_CACHE[cache_key] = resolved
+            return resolved
+        if resolved:
+            SYMBOL_CACHE[cache_key] = resolved
+        return resolved
+    except Exception:
+        return None
+
+def serialize_history(dataframe):
+    if dataframe is None or dataframe.empty:
+        return []
+
+    df = dataframe.reset_index()
+    time_key = 'Datetime' if 'Datetime' in df.columns else 'Date'
+    rows = []
+
+    for _, row in df.iterrows():
+        timestamp = row[time_key]
+        if isinstance(timestamp, datetime):
+            timestamp = timestamp.isoformat()
+
+        rows.append({
+            'time': timestamp,
+            'open': float(row['Open']) if row['Open'] == row['Open'] else None,
+            'high': float(row['High']) if row['High'] == row['High'] else None,
+            'low': float(row['Low']) if row['Low'] == row['Low'] else None,
+            'close': float(row['Close']) if row['Close'] == row['Close'] else None,
+            'volume': float(row['Volume']) if row['Volume'] == row['Volume'] else None
+        })
+
+    return rows
+
+def filter_market_hours(history_df, exchange_tz: str = 'Asia/Kolkata'):
+    if history_df is None or history_df.empty:
+        return history_df
+
+    tz = ZoneInfo(exchange_tz)
+    index = history_df.index
+    if index.tz is None:
+        localized = history_df.tz_localize(tz)
+    else:
+        localized = history_df.tz_convert(tz)
+
+    market_open = time(9, 15)
+    market_close = time(15, 30)
+    mask = localized.index.map(lambda ts: market_open <= ts.timetz().replace(tzinfo=None) <= market_close)
+    return localized.loc[mask]
+
+def is_market_open_now(exchange_tz: str = 'Asia/Kolkata') -> bool:
+    tz = ZoneInfo(exchange_tz)
+    now = datetime.now(tz)
+    if now.weekday() >= 5:
+        return False
+    market_open = time(9, 15)
+    market_close = time(15, 30)
+    return market_open <= now.timetz().replace(tzinfo=None) <= market_close
+
+def get_intraday_history(ticker, interval: str = '1m'):
+    cache_key = f"{ticker.ticker}:{interval}"
+    cached = INTRADAY_CACHE.get(cache_key)
+    now = datetime.utcnow()
+    if cached and (now - cached['fetched_at']) < timedelta(seconds=INTRADAY_CACHE_TTL_SECONDS):
+        return cached['data']
+
+    history_df = ticker.history(period='1d', interval=interval, auto_adjust=False)
+    history_df = filter_market_hours(history_df)
+    INTRADAY_CACHE[cache_key] = {'data': history_df, 'fetched_at': now}
+    return history_df
 
 print(" Loading FinBERT model...")
 try:
@@ -57,6 +256,91 @@ class BatchSentimentResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     ml_model_loaded: bool
+
+class CompanyAnalysisResponse(BaseModel):
+    symbol: str
+    name: str
+    currency: Optional[str]
+    price: Optional[float]
+    change: Optional[float]
+    changePercent: Optional[float]
+    range: str
+    ohlc: dict
+    volume: Optional[float]
+    avgVolume: Optional[float]
+    fundamentals: dict
+    history: List[dict]
+    indicators: Optional[dict] = None
+
+def compute_sma(values: List[float], period: int) -> Optional[float]:
+    if len(values) < period:
+        return None
+    return sum(values[-period:]) / period
+
+def compute_ema(values: List[float], period: int) -> Optional[float]:
+    if len(values) < period:
+        return None
+    k = 2 / (period + 1)
+    ema = sum(values[:period]) / period
+    for value in values[period:]:
+        ema = (value - ema) * k + ema
+    return ema
+
+def compute_rsi(values: List[float], period: int = 14) -> Optional[float]:
+    if len(values) <= period:
+        return None
+
+    gains = []
+    losses = []
+    for i in range(1, period + 1):
+        delta = values[i] - values[i - 1]
+        gains.append(max(delta, 0))
+        losses.append(abs(min(delta, 0)))
+
+    avg_gain = sum(gains) / period
+    avg_loss = sum(losses) / period
+
+    for i in range(period + 1, len(values)):
+        delta = values[i] - values[i - 1]
+        gain = max(delta, 0)
+        loss = abs(min(delta, 0))
+        avg_gain = (avg_gain * (period - 1) + gain) / period
+        avg_loss = (avg_loss * (period - 1) + loss) / period
+
+    if avg_loss == 0:
+        return 100.0
+
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+def compute_macd(values: List[float]) -> Optional[dict]:
+    if len(values) < 35:
+        return None
+    ema_12 = compute_ema(values, 12)
+    ema_26 = compute_ema(values, 26)
+    if ema_12 is None or ema_26 is None:
+        return None
+    macd_line = ema_12 - ema_26
+
+    macd_series = []
+    ema_short = sum(values[:12]) / 12
+    ema_long = sum(values[:26]) / 26
+    k_short = 2 / (12 + 1)
+    k_long = 2 / (26 + 1)
+    for value in values[26:]:
+        ema_short = (value - ema_short) * k_short + ema_short
+        ema_long = (value - ema_long) * k_long + ema_long
+        macd_series.append(ema_short - ema_long)
+
+    signal = compute_ema(macd_series, 9)
+    if signal is None:
+        return None
+    histogram = macd_line - signal
+    return {
+        'macd': macd_line,
+        'signal': signal,
+        'histogram': histogram
+    }
 
 @app.get("/", response_model=dict)
 async def root():
@@ -191,6 +475,116 @@ async def analyze_batch(request: BatchSentimentRequest):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Batch analysis error: {str(e)}")
+
+@app.get("/analysis/company", response_model=CompanyAnalysisResponse)
+async def get_company_analysis(name: str, symbol: Optional[str] = None, range: str = "1d"):
+    resolved_symbol = resolve_symbol(name, symbol)
+    if not resolved_symbol:
+        raise HTTPException(status_code=404, detail="Unable to resolve company symbol")
+
+    try:
+        ticker = yf.Ticker(resolved_symbol)
+        info = ticker.info or {}
+        fast_info = getattr(ticker, 'fast_info', {}) or {}
+
+        range_key = (range or "1d").lower()
+        range_map = {
+            "1d": {"period": "1d", "interval": "1m"},
+            "5d": {"period": "5d", "interval": "30m"},
+            "1m": {"period": "1mo", "interval": "1h"},
+            "6m": {"period": "6mo", "interval": "1d"},
+            "ytd": {"period": "ytd", "interval": "1d"},
+            "1y": {"period": "1y", "interval": "1d"},
+            "5y": {"period": "5y", "interval": "1wk"},
+            "max": {"period": "max", "interval": "1mo"}
+        }
+        range_settings = range_map.get(range_key, range_map["1d"])
+
+        if range_key == "1d":
+            history_df = get_intraday_history(ticker, range_settings["interval"])
+        else:
+            history_df = ticker.history(
+                period=range_settings["period"],
+                interval=range_settings["interval"],
+                auto_adjust=False
+            )
+
+        latest_row = None
+        prev_row = None
+        if history_df is not None and not history_df.empty:
+            latest_row = history_df.iloc[-1]
+            if len(history_df) > 1:
+                prev_row = history_df.iloc[-2]
+
+        ohlc = {
+            'open': float(latest_row['Open']) if latest_row is not None else None,
+            'high': float(latest_row['High']) if latest_row is not None else None,
+            'low': float(latest_row['Low']) if latest_row is not None else None,
+            'close': float(latest_row['Close']) if latest_row is not None else None,
+            'volume': float(latest_row['Volume']) if latest_row is not None else None
+        }
+
+        fast_price = fast_info.get('last_price') or fast_info.get('lastPrice')
+        fast_prev_close = fast_info.get('previous_close') or fast_info.get('previousClose')
+        prev_close_fallback = fast_prev_close or info.get('previousClose')
+
+        if is_market_open_now():
+            price = fast_price or info.get('regularMarketPrice') or ohlc['close']
+        else:
+            price = ohlc['close'] or prev_close_fallback
+        change = None
+        change_percent = None
+        prev_close = None
+        if prev_close_fallback is not None:
+            prev_close = float(prev_close_fallback)
+        elif prev_row is not None:
+            prev_close = float(prev_row['Close']) if prev_row is not None else None
+
+        if price is not None and prev_close is not None and prev_close != 0:
+            change = price - prev_close
+            change_percent = (change / prev_close) * 100
+
+        fundamentals = {
+            'marketCap': info.get('marketCap'),
+            'peRatio': info.get('trailingPE'),
+            'eps': info.get('trailingEps'),
+            'dividendYield': info.get('dividendYield'),
+            'beta': info.get('beta'),
+            'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh'),
+            'fiftyTwoWeekLow': info.get('fiftyTwoWeekLow')
+        }
+
+        indicators = None
+        indicator_df = ticker.history(period="6mo", interval="1d", auto_adjust=False)
+        closes = indicator_df['Close'].dropna().tolist() if indicator_df is not None and not indicator_df.empty else []
+        if closes:
+            macd_values = compute_macd(closes)
+            indicators = {
+                'rsi': compute_rsi(closes, 14),
+                'macd': macd_values,
+                'sma20': compute_sma(closes, 20),
+                'sma50': compute_sma(closes, 50),
+                'ema20': compute_ema(closes, 20),
+                'ema50': compute_ema(closes, 50)
+            }
+
+        return {
+            'symbol': resolved_symbol,
+            'name': info.get('shortName') or name,
+            'currency': info.get('currency') or fast_info.get('currency'),
+            'price': price,
+            'change': change if change is not None else info.get('regularMarketChange'),
+            'changePercent': change_percent if change_percent is not None else info.get('regularMarketChangePercent'),
+            'range': range_key,
+            'ohlc': ohlc,
+            'volume': info.get('regularMarketVolume') or ohlc['volume'],
+            'avgVolume': info.get('averageVolume'),
+            'fundamentals': fundamentals,
+            'history': serialize_history(history_df),
+            'indicators': indicators
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Yahoo Finance error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

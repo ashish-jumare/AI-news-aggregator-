@@ -6,14 +6,35 @@ import { jwtDecode } from 'jwt-decode';
 import axios from 'axios';
 import { API_ENDPOINTS } from '../config/api';
 import SettingsModal from '../components/SettingsModal';
+import { COMPANIES } from '../components/Sidebar';
 
 export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onOpenLLM, onSettingsChange }) {
-  const { isDark } = useTheme();
+  const { isDark, toggleTheme } = useTheme();
   const { user, signup, login, googleLogin, logout, isAuthenticated } = useAuth();
+  const analysisApiUrl = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:5001';
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [isSignup, setIsSignup] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showCompanyGrid, setShowCompanyGrid] = useState(false);
+  const [analysisSearch, setAnalysisSearch] = useState('');
+  const [analysisCompany, setAnalysisCompany] = useState(null);
+  const [analysisData, setAnalysisData] = useState(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState('');
+  const [analysisRange, setAnalysisRange] = useState('1d');
+  const [hoverPoint, setHoverPoint] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const rangeOptions = [
+    { key: '1d', label: '1D' },
+    { key: '5d', label: '5D' },
+    { key: '1m', label: '1M' },
+    { key: '6m', label: '6M' },
+    { key: 'ytd', label: 'YTD' },
+    { key: '1y', label: '1Y' },
+    { key: '5y', label: '5Y' },
+    { key: 'max', label: 'Max' }
+  ];
   
   // Auth form state
   const [authForm, setAuthForm] = useState({
@@ -42,6 +63,162 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
     if (element) {
       element.scrollIntoView({ behavior: 'smooth' });
     }
+  };
+
+  const formatNumber = (value) => {
+    if (value === null || value === undefined) return '—';
+    return Intl.NumberFormat('en-IN').format(value);
+  };
+
+  const formatPercent = (value) => {
+    if (value === null || value === undefined) return '—';
+    return `${value.toFixed(2)}%`;
+  };
+
+
+  const formatAxisLabel = (value) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+
+    if (['1d', '5d'].includes(analysisRange)) {
+      return date.toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+
+    if (['1m', '6m', 'ytd', '1y'].includes(analysisRange)) {
+      return date.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short'
+      });
+    }
+
+    return date.toLocaleDateString('en-IN', {
+      month: 'short',
+      year: '2-digit'
+    });
+  };
+
+  const getAxisLabels = (history) => {
+    if (!history || history.length === 0) return [];
+    const total = history.length;
+    const slots = total < 4 ? total : 4;
+    const step = Math.max(Math.floor((total - 1) / (slots - 1 || 1)), 1);
+
+    return Array.from({ length: slots }, (_, i) => {
+      const index = i === slots - 1 ? total - 1 : i * step;
+      const point = history[index];
+      return {
+        index,
+        label: formatAxisLabel(point?.time)
+      };
+    });
+  };
+
+  const getIstNow = () => {
+    return new Date(new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
+  };
+
+  const isMarketOpen = () => {
+    const now = getIstNow();
+    const day = now.getDay();
+    if (day === 0 || day === 6) return false;
+
+    const open = new Date(now);
+    open.setHours(9, 15, 0, 0);
+    const close = new Date(now);
+    close.setHours(15, 30, 0, 0);
+
+    return now >= open && now <= close;
+  };
+
+  const fetchAnalysis = async (company, range, options = {}) => {
+    const { silent = false } = options;
+    if (!silent) {
+      setAnalysisLoading(true);
+      setAnalysisError('');
+    }
+
+    try {
+      const response = await axios.get(`${analysisApiUrl}/analysis/company`, {
+        params: {
+          name: company.name,
+          symbol: company.symbol,
+          range
+        }
+      });
+      setAnalysisData(response.data);
+      setAnalysisRange(range);
+      setLastUpdated(new Date());
+      if (!silent) {
+        setAnalysisError('');
+      }
+    } catch (error) {
+      if (!silent) {
+        setAnalysisError(error.response?.data?.detail || 'Failed to load analysis data.');
+      }
+    } finally {
+      if (!silent) {
+        setAnalysisLoading(false);
+      }
+    }
+  };
+
+  const openAnalysis = async (company) => {
+    setShowCompanyGrid(false);
+    setAnalysisCompany(company);
+    setAnalysisData(null);
+    await fetchAnalysis(company, '1d');
+  };
+
+  const handleRangeChange = (range) => {
+    if (!analysisCompany || analysisLoading || range === analysisRange) return;
+    fetchAnalysis(analysisCompany, range);
+  };
+
+  useEffect(() => {
+    if (!analysisCompany || analysisRange !== '1d') return undefined;
+    const poll = () => {
+      if (isMarketOpen()) {
+        fetchAnalysis(analysisCompany, '1d', { silent: true });
+      }
+    };
+    const intervalId = setInterval(poll, 60000);
+    return () => clearInterval(intervalId);
+  }, [analysisCompany, analysisRange]);
+
+  useEffect(() => {
+    const shouldLockScroll = showCompanyGrid || Boolean(analysisCompany);
+    document.body.style.overflow = shouldLockScroll ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showCompanyGrid, analysisCompany]);
+
+  const formatChartTime = (value) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const marketStatus = isMarketOpen() ? 'Market Open' : 'Market Closed';
+  const formatUpdateTime = (value) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Kolkata'
+    });
   };
 
   // Handle News button click with authentication check
@@ -130,6 +307,10 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
       setAuthLoading(false);
     }
   };
+
+  const filteredAnalysisCompanies = COMPANIES.filter(company =>
+    company.name.toLowerCase().includes(analysisSearch.trim().toLowerCase())
+  );
 
   // Handle Google OAuth success
   const handleGoogleSuccess = async (credentialResponse) => {
@@ -220,55 +401,61 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
   ];
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] dark:bg-gray-900 transition-colors duration-300">
+    <div className="min-h-screen bg-white text-slate-900 dark:bg-[#0B0F1A] dark:text-slate-100 transition-colors duration-300">
       {/* Navigation Bar */}
-      <nav className="fixed top-0 left-0 right-0 bg-[#0F172A] dark:bg-gray-950 backdrop-blur-xl border-b border-[#1E293B] dark:border-gray-800 z-50 transition-all duration-300 shadow-sm">
-        <div className="max-w-7xl mx-auto px-6 py-3.5">
+      <nav className="fixed top-0 left-0 right-0 bg-white/80 dark:bg-[#0B0F1A]/80 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/10 z-50 shadow-lg">
+        <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             {/* Logo */}
             <div className="flex items-center gap-3 group cursor-pointer">
-              <div className="w-11 h-11 bg-[#1E40AF] dark:bg-blue-600 rounded-xl flex items-center justify-center shadow-md group-hover:shadow-lg transition-all group-hover:scale-105">
+              <div className="w-11 h-11 bg-[#0EA5E9] rounded-2xl flex items-center justify-center shadow-[0_12px_30px_rgba(14,165,233,0.35)] transition-transform group-hover:-translate-y-0.5">
                 <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
               </div>
               <div>
-                <span className="text-2xl font-bold text-white dark:text-blue-400 tracking-tight">
+                <span className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
                   NEWSINSIGHT
                 </span>
-                <div className="text-[10px] text-[#94A3B8] dark:text-gray-500 -mt-1 tracking-wider">AI-POWERED NEWS INTELLIGENCE</div>
+                <div className="text-[10px] text-slate-500 dark:text-slate-400 -mt-1 tracking-[0.2em]">AI MARKET INTEL</div>
               </div>
             </div>
 
             {/* Navigation Links */}
-            <div className="hidden md:flex items-center gap-1">
+            <div className="hidden md:flex items-center gap-2">
               <button
                 onClick={() => scrollToSection('home')}
-                className="px-4 py-2 text-[#94A3B8] dark:text-gray-400 hover:text-white dark:hover:text-white hover:bg-[#1E293B] dark:hover:bg-gray-800 rounded-lg font-medium transition-all"
+                className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-sm font-semibold transition-all"
               >
                 Home
               </button>
               <button
                 onClick={handleNewsClick}
-                className="px-4 py-2 text-[#94A3B8] dark:text-gray-400 hover:text-white dark:hover:text-white hover:bg-[#1E293B] dark:hover:bg-gray-800 rounded-lg font-medium transition-all"
+                className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-sm font-semibold transition-all"
               >
                 News
               </button>
               <button
+                onClick={() => setShowCompanyGrid(true)}
+                className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-sm font-semibold transition-all"
+              >
+                Analysis
+              </button>
+              <button
                 onClick={handleLLMClick}
-                className="px-4 py-2 text-[#94A3B8] dark:text-gray-400 hover:text-white dark:hover:text-white hover:bg-[#1E293B] dark:hover:bg-gray-800 rounded-lg font-medium transition-all"
+                className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-sm font-semibold transition-all"
               >
                 LLM
               </button>
               <button
                 onClick={() => scrollToSection('services')}
-                className="px-4 py-2 text-[#94A3B8] dark:text-gray-400 hover:text-white dark:hover:text-white hover:bg-[#1E293B] dark:hover:bg-gray-800 rounded-lg font-medium transition-all"
+                className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-sm font-semibold transition-all"
               >
                 Services
               </button>
               <button
                 onClick={() => scrollToSection('about')}
-                className="px-4 py-2 text-[#94A3B8] dark:text-gray-400 hover:text-white dark:hover:text-white hover:bg-[#1E293B] dark:hover:bg-gray-800 rounded-lg font-medium transition-all"
+                className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-sm font-semibold transition-all"
               >
                 About
               </button>
@@ -279,11 +466,46 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
               {!isAuthenticated ? (
                 <>
                   <button
+                    onClick={toggleTheme}
+                    className="w-9 h-9 rounded-full bg-slate-100 dark:bg-white/10 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/20 transition-all duration-300 flex items-center justify-center"
+                    aria-label="Toggle theme"
+                  >
+                    {isDark ? (
+                      <svg
+                        className="w-4 h-4 text-yellow-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
+                        />
+                      </svg>
+                    ) : (
+                      <svg
+                        className="w-4 h-4 text-white"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                  <button
                     onClick={() => {
                       setIsSignup(false);
                       setShowLoginModal(true);
                     }}
-                    className="px-5 py-2 text-white hover:text-[#60A5FA] font-medium transition-colors"
+                    className="px-5 py-2 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white font-semibold transition-colors"
                   >
                     Login
                   </button>
@@ -292,25 +514,61 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                       setIsSignup(true);
                       setShowLoginModal(true);
                     }}
-                    className="px-6 py-2.5 bg-[#1E40AF] text-white rounded-xl font-semibold hover:bg-[#1E3A8A] hover:shadow-lg transition-all"
+                    className="px-6 py-2.5 bg-[#0EA5E9] text-white rounded-full font-semibold hover:bg-[#0284C7] shadow-[0_10px_30px_rgba(14,165,233,0.35)] transition-all"
                   >
                     Sign Up Free
                   </button>
                 </>
               ) : (
-                /* Account Button */
                 <div className="relative">
-                  <button
-                    onClick={() => setShowAccountMenu(!showAccountMenu)}
-                    className="w-10 h-10 rounded-full bg-[#1E40AF] hover:shadow-lg transition-all duration-300 transform hover:scale-105 flex items-center justify-center text-white font-semibold text-sm"
-                    aria-label="Account menu"
-                  >
-                    {user?.profilePicture ? (
-                      <img src={user.profilePicture} alt="Profile" className="w-full h-full rounded-full" />
-                    ) : (
-                      <span>{user?.fullName?.charAt(0).toUpperCase() || 'U'}</span>
-                    )}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={toggleTheme}
+                      className="w-9 h-9 rounded-full bg-slate-100 dark:bg-white/10 border border-slate-200 dark:border-white/20 hover:bg-slate-200 dark:hover:bg-white/20 transition-all duration-300 flex items-center justify-center"
+                      aria-label="Toggle theme"
+                    >
+                      {isDark ? (
+                        <svg
+                          className="w-4 h-4 text-yellow-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
+                          />
+                        </svg>
+                      ) : (
+                        <svg
+                          className="w-4 h-4 text-slate-800 dark:text-white"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
+                          />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setShowAccountMenu(!showAccountMenu)}
+                      className="w-10 h-10 rounded-full bg-[#1E40AF] hover:shadow-lg transition-all duration-300 transform hover:scale-105 flex items-center justify-center text-white font-semibold text-sm"
+                      aria-label="Account menu"
+                    >
+                      {user?.profilePicture ? (
+                        <img src={user.profilePicture} alt="Profile" className="w-full h-full rounded-full" />
+                      ) : (
+                        <span>{user?.fullName?.charAt(0).toUpperCase() || 'U'}</span>
+                      )}
+                    </button>
+                  </div>
 
                   {/* Account Dropdown Menu */}
                   {showAccountMenu && (
@@ -320,7 +578,7 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                         className="fixed inset-0 z-10"
                         onClick={() => setShowAccountMenu(false)}
                       />
-                      <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden z-20">
+                      <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden z-20">
                         {/* Profile Section */}
                         <div className="p-6 text-center border-b border-gray-200 dark:border-gray-700">
                           <div className="w-20 h-20 rounded-full bg-[#1E40AF] flex items-center justify-center text-white font-bold text-3xl mx-auto mb-3 shadow-md">
@@ -422,121 +680,497 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
         </div>
       </nav>
 
-      {/* Hero Section (Home) */}
-      <section id="home" className="pt-28 pb-16 px-6 relative overflow-hidden min-h-screen flex items-center bg-white dark:bg-gray-900">
-        {/* Animated Gradient Background */}
-        <div className="absolute inset-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-[#F1F5F9] via-white to-[#EFF6FF] dark:from-gray-900 dark:via-gray-800 dark:to-gray-900"></div>
+      {showCompanyGrid && !analysisCompany && (
+        <div className="fixed inset-0 z-50 bg-[#F8FAFC] dark:bg-gray-900 overflow-y-auto">
+          <div className="max-w-7xl mx-auto px-6 pt-16 pb-10">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+              <div>
+                <h2 className="text-3xl font-bold text-gray-900 dark:text-white">Company Analysis</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">All tracked NIFTY 100 companies</p>
+              </div>
+              <button
+                onClick={() => setShowCompanyGrid(false)}
+                className="px-4 py-2 rounded-full bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
+              >
+                Back to Home
+              </button>
+            </div>
+            <div className="mb-4">
+              <div className="relative max-w-md">
+                <input
+                  type="text"
+                  value={analysisSearch}
+                  onChange={(e) => setAnalysisSearch(e.target.value)}
+                  placeholder="Search companies..."
+                  className="w-full rounded-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-2.5 pr-10 text-sm text-gray-700 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <svg className="w-4 h-4 text-gray-400 absolute right-4 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+              {filteredAnalysisCompanies.map((company) => (
+                <button
+                  key={company.id}
+                  onClick={() => openAnalysis(company)}
+                  className="flex items-center gap-3 p-4 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-800/40 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
+                >
+                  <div className="w-12 h-12 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 flex items-center justify-center">
+                    <img
+                      src={company.logo}
+                      alt=""
+                      className="w-8 h-8 object-contain"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.nextSibling.style.display = 'block';
+                      }}
+                    />
+                    <span className="text-xl hidden" aria-hidden="true">
+                      {company.icon}
+                    </span>
+                  </div>
+                  <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                    {company.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-        
-        {/* Animated Dots Pattern */}
-        <div className="absolute inset-0 opacity-5 dark:opacity-10">
-          <div className="absolute inset-0" style={{
-            backgroundImage: 'radial-gradient(circle, #1E40AF 1px, transparent 1px)',
-            backgroundSize: '40px 40px'
-          }}></div>
-        </div>
+      )}
 
-        {/* Floating Orbs */}
-        <div className="absolute top-20 left-10 w-72 h-72 bg-[#1E40AF]/5 dark:bg-blue-500/10 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-20 right-10 w-96 h-96 bg-[#0F766E]/5 dark:bg-teal-500/10 rounded-full blur-3xl"></div>
-        
-        <div className="max-w-7xl mx-auto relative z-20 grid md:grid-cols-2 gap-16 items-center">
-          <div className="space-y-8">
-            {/* Badge */}
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#EFF6FF] dark:bg-blue-900/30 border border-[#BFDBFE] dark:border-blue-700/50 rounded-full">
-              <span className="w-2 h-2 bg-[#1E40AF] dark:bg-blue-500 rounded-full animate-pulse"></span>
-              <span className="text-sm font-semibold text-[#1E40AF] dark:text-blue-400">Real-time Market Intelligence</span>
+      {analysisCompany && (
+        <div className="fixed inset-0 z-50 bg-[#F8FAFC] dark:bg-gray-900 overflow-y-auto">
+          <div className="max-w-7xl mx-auto px-6 pt-24 pb-10">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+              <div>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Company Analysis</p>
+                <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
+                  {analysisData?.name || analysisCompany.name}
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {analysisData?.symbol ? `${analysisData.symbol} • ` : ''}{analysisData?.currency || ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setAnalysisCompany(null);
+                    setAnalysisData(null);
+                    setShowCompanyGrid(true);
+                  }}
+                  className="px-4 py-2 rounded-full bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
+                >
+                  Back to Analysis Grid
+                </button>
+              </div>
             </div>
 
-            <h1 className="text-5xl md:text-6xl lg:text-7xl font-extrabold text-[#0F172A] dark:text-white leading-tight">
-              AI-Powered News
-              <span className="block mt-2 text-[#1E40AF] dark:text-blue-400">
-                Intelligence
+            {analysisLoading && (
+              <div className="text-center py-20 text-gray-600 dark:text-gray-300">Loading analysis...</div>
+            )}
+
+            {analysisError && !analysisLoading && (
+              <div className="text-center py-16 text-red-500">{analysisError}</div>
+            )}
+
+            {!analysisLoading && !analysisError && analysisData && (
+              <div className="grid lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 space-y-6">
+                  <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-800/40 p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+                      <div>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Live Price</p>
+                        <div className="flex items-end gap-3">
+                          <h3 className="text-3xl font-bold text-gray-900 dark:text-white">
+                            {analysisData.price ? `${analysisData.price.toFixed(2)}` : '—'}
+                          </h3>
+                          <span className={`text-sm font-semibold ${analysisData.change && analysisData.change >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                            {analysisData.change ? `${analysisData.change.toFixed(2)} (${formatPercent((analysisData.changePercent || 0) * 100)})` : '—'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-semibold px-3 py-1 rounded-full ${marketStatus === 'Market Open' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-700/50 dark:text-gray-300'}`}>
+                            {marketStatus}
+                          </span>
+                          {lastUpdated && (
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              Updated {formatUpdateTime(lastUpdated)} IST
+                            </span>
+                          )}
+                        </div>
+                        {rangeOptions.map((rangeOption) => (
+                          <button
+                            key={rangeOption.key}
+                            onClick={() => handleRangeChange(rangeOption.key)}
+                            className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${analysisRange === rangeOption.key ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}
+                          >
+                            {rangeOption.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="h-64 w-full relative">
+                      {analysisData.history?.length ? (
+                        <svg
+                          viewBox="0 0 600 240"
+                          className="w-full h-full"
+                          onMouseLeave={() => setHoverPoint(null)}
+                        >
+                          <defs>
+                            <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor={analysisData.change && analysisData.change >= 0 ? '#10B981' : '#EF4444'} stopOpacity="0.3" />
+                              <stop offset="100%" stopColor={analysisData.change && analysisData.change >= 0 ? '#10B981' : '#EF4444'} stopOpacity="0" />
+                            </linearGradient>
+                          </defs>
+                          {(() => {
+                            const prices = analysisData.history.map((item) => item.close).filter((value) => value !== null);
+                            if (!prices.length) {
+                              return null;
+                            }
+                            const min = Math.min(...prices);
+                            const max = Math.max(...prices);
+                            const points = analysisData.history.map((point, index) => {
+                              const value = point.close ?? min;
+                              const x = (index / Math.max(analysisData.history.length - 1, 1)) * 600;
+                              const y = 220 - ((value - min) / (max - min || 1)) * 180;
+                              return {
+                                x,
+                                y,
+                                close: value,
+                                time: point.time,
+                                xPercent: (x / 600) * 100
+                              };
+                            });
+                            const linePoints = points.map((point) => `${point.x},${point.y}`).join(' ');
+                            const areaPoints = `${linePoints} 600,220 0,220`;
+
+                            const handleMove = (event) => {
+                              const bounds = event.currentTarget.getBoundingClientRect();
+                              const relativeX = Math.min(Math.max(event.clientX - bounds.left, 0), bounds.width);
+                              const chartX = (relativeX / bounds.width) * 600;
+                              const index = Math.round((chartX / 600) * (points.length - 1));
+                              const clampedIndex = Math.min(Math.max(index, 0), points.length - 1);
+                              setHoverPoint(points[clampedIndex]);
+                            };
+
+                            return (
+                              <>
+                                {[40, 80, 120, 160, 200].map((y) => (
+                                  <line
+                                    key={y}
+                                    x1="0"
+                                    x2="600"
+                                    y1={y}
+                                    y2={y}
+                                    stroke="#334155"
+                                    strokeDasharray="2 6"
+                                    strokeWidth="1"
+                                  />
+                                ))}
+                                <rect
+                                  x="0"
+                                  y="0"
+                                  width="600"
+                                  height="240"
+                                  fill="transparent"
+                                  onMouseMove={handleMove}
+                                />
+                                <polygon fill="url(#priceGradient)" points={areaPoints} />
+                                <polyline
+                                  fill="none"
+                                  stroke={analysisData.change && analysisData.change >= 0 ? '#10B981' : '#EF4444'}
+                                  strokeWidth="2.5"
+                                  points={linePoints}
+                                />
+                                {hoverPoint && (
+                                  <>
+                                    <line
+                                      x1={hoverPoint.x}
+                                      x2={hoverPoint.x}
+                                      y1="20"
+                                      y2="220"
+                                      stroke="#94A3B8"
+                                      strokeDasharray="4 4"
+                                      strokeWidth="1"
+                                    />
+                                    <circle
+                                      cx={hoverPoint.x}
+                                      cy={hoverPoint.y}
+                                      r="4"
+                                      fill="#FFFFFF"
+                                      stroke={analysisData.change && analysisData.change >= 0 ? '#10B981' : '#EF4444'}
+                                      strokeWidth="2"
+                                    />
+                                  </>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </svg>
+                      ) : (
+                        <div className="h-full flex items-center justify-center text-gray-400">Chart data unavailable</div>
+                      )}
+                      {analysisData.history?.length ? (
+                        <div className="pointer-events-none absolute inset-y-0 left-0 flex flex-col justify-between text-[11px] text-gray-500 dark:text-gray-400 py-3">
+                          {(() => {
+                            const prices = analysisData.history.map((item) => item.close).filter((value) => value !== null);
+                            if (!prices.length) return null;
+                            const min = Math.min(...prices);
+                            const max = Math.max(...prices);
+                            const steps = 4;
+                            return Array.from({ length: steps + 1 }, (_, index) => {
+                              const value = max - (index * (max - min)) / steps;
+                              return (
+                                <div key={`price-${index}`} className="flex items-center gap-2">
+                                  <span className="w-10 text-right">{value.toFixed(2)}</span>
+                                  <span className="h-px w-2 bg-gray-600/40" />
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
+                      ) : null}
+                      {hoverPoint && (
+                        <div
+                          className="absolute top-3 rounded-lg bg-gray-900 text-white text-xs px-3 py-2 shadow-lg"
+                          style={{ left: `${hoverPoint.xPercent}%`, transform: 'translateX(-50%)' }}
+                        >
+                          <div className="font-semibold">{hoverPoint.close?.toFixed(2) || '—'}</div>
+                          <div className="text-gray-300">{formatChartTime(hoverPoint.time)}</div>
+                        </div>
+                      )}
+                    </div>
+                    {analysisData.history?.length ? (
+                      <div className="mt-3 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                        {getAxisLabels(analysisData.history).map((label, index) => (
+                          <span key={`${label.label}-${index}`}>{label.label}</span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-800/40 p-5">
+                      <h4 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3">OHLC</h4>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <p className="text-gray-500">Open</p>
+                          <p className="font-semibold text-gray-900 dark:text-white">{analysisData.ohlc.open?.toFixed(2) || '—'}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-500">High</p>
+                          <p className="font-semibold text-gray-900 dark:text-white">{analysisData.ohlc.high?.toFixed(2) || '—'}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-500">Low</p>
+                          <p className="font-semibold text-gray-900 dark:text-white">{analysisData.ohlc.low?.toFixed(2) || '—'}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-500">Close</p>
+                          <p className="font-semibold text-gray-900 dark:text-white">{analysisData.ohlc.close?.toFixed(2) || '—'}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-800/40 p-5">
+                      <h4 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3">Volume</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-500">Current</span>
+                          <span className="font-semibold text-gray-900 dark:text-white">{formatNumber(analysisData.volume)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-500">Average</span>
+                          <span className="font-semibold text-gray-900 dark:text-white">{formatNumber(analysisData.avgVolume)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-800/40 p-5">
+                    <h4 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4">Key Stats</h4>
+                    <div className="space-y-3 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-500">Market Cap</span>
+                        <span className="font-semibold text-gray-900 dark:text-white">{formatNumber(analysisData.fundamentals.marketCap)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-500">P/E Ratio</span>
+                        <span className="font-semibold text-gray-900 dark:text-white">{analysisData.fundamentals.peRatio?.toFixed(2) || '—'}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-500">EPS (TTM)</span>
+                        <span className="font-semibold text-gray-900 dark:text-white">{analysisData.fundamentals.eps?.toFixed(2) || '—'}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-500">Dividend Yield</span>
+                        <span className="font-semibold text-gray-900 dark:text-white">{analysisData.fundamentals.dividendYield ? formatPercent(analysisData.fundamentals.dividendYield * 100) : '—'}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-500">52W High</span>
+                        <span className="font-semibold text-gray-900 dark:text-white">{analysisData.fundamentals.fiftyTwoWeekHigh?.toFixed(2) || '—'}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-500">52W Low</span>
+                        <span className="font-semibold text-gray-900 dark:text-white">{analysisData.fundamentals.fiftyTwoWeekLow?.toFixed(2) || '—'}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-500">Volume</span>
+                        <span className="font-semibold text-gray-900 dark:text-white">{formatNumber(analysisData.volume)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-500">Avg Volume</span>
+                        <span className="font-semibold text-gray-900 dark:text-white">{formatNumber(analysisData.avgVolume)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  {analysisData.indicators && (
+                    <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-800/40 p-5">
+                      <h4 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4">Indicators</h4>
+                      <div className="space-y-3 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-500">RSI (14)</span>
+                          <span className="font-semibold text-gray-900 dark:text-white">{analysisData.indicators.rsi?.toFixed(2) || '—'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-500">MACD</span>
+                          <span className="font-semibold text-gray-900 dark:text-white">{analysisData.indicators.macd?.macd?.toFixed(2) || '—'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-500">MACD Signal</span>
+                          <span className="font-semibold text-gray-900 dark:text-white">{analysisData.indicators.macd?.signal?.toFixed(2) || '—'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-500">MACD Histogram</span>
+                          <span className="font-semibold text-gray-900 dark:text-white">{analysisData.indicators.macd?.histogram?.toFixed(2) || '—'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-500">SMA 20</span>
+                          <span className="font-semibold text-gray-900 dark:text-white">{analysisData.indicators.sma20?.toFixed(2) || '—'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-500">SMA 50</span>
+                          <span className="font-semibold text-gray-900 dark:text-white">{analysisData.indicators.sma50?.toFixed(2) || '—'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-500">EMA 20</span>
+                          <span className="font-semibold text-gray-900 dark:text-white">{analysisData.indicators.ema20?.toFixed(2) || '—'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-500">EMA 50</span>
+                          <span className="font-semibold text-gray-900 dark:text-white">{analysisData.indicators.ema50?.toFixed(2) || '—'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Hero Section (Home) */}
+      <section id="home" className="pt-32 pb-24 px-6 relative overflow-hidden min-h-screen flex items-center bg-slate-50 dark:bg-[#0B0F1A]">
+        {/* Atmospheric Background */}
+        <div className="absolute inset-0">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.9))] dark:bg-[radial-gradient(circle_at_top,_rgba(15,23,42,0.6),_rgba(11,15,26,0.95))]"></div>
+        </div>
+        <div className="absolute inset-0 opacity-20">
+          <div className="absolute inset-0" style={{
+            backgroundImage: 'radial-gradient(circle, rgba(56,189,248,0.2) 1px, transparent 1px)',
+            backgroundSize: '60px 60px'
+          }}></div>
+        </div>
+        <div className="absolute -top-20 right-0 w-[32rem] h-[32rem] bg-cyan-500/10 rounded-full blur-[120px]"></div>
+        <div className="absolute -bottom-28 left-12 w-[28rem] h-[28rem] bg-blue-600/10 rounded-full blur-[120px]"></div>
+
+        <div className="max-w-7xl mx-auto relative z-20 grid md:grid-cols-2 gap-16 items-center">
+          <div className="space-y-8">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 dark:bg-white/10 border border-slate-200 dark:border-white/10 text-sm font-semibold text-slate-700 dark:text-cyan-200">
+              <span className="w-2 h-2 bg-cyan-500 dark:bg-cyan-400 rounded-full animate-pulse"></span>
+              Built for market speed and signal clarity
+            </div>
+
+            <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold leading-tight text-slate-900 dark:text-white">
+              Trade on insight.
+              <span className="block mt-3 bg-gradient-to-r from-cyan-300 to-blue-500 text-transparent bg-clip-text">
+                Read the market faster.
               </span>
             </h1>
-            
-            <p className="text-xl text-[#64748B] dark:text-gray-400 leading-relaxed max-w-xl">
-              Harness AI-powered sentiment analysis, real-time updates, and intelligent alerts to stay ahead in the market. Make smarter decisions with NewsInsight.
+
+            <p className="text-lg text-slate-600 dark:text-slate-300 leading-relaxed max-w-xl">
+              NewsInsight blends market-moving headlines, AI sentiment, and live analytics so you can act with confidence across every session.
             </p>
-            
+
             <div className="flex flex-wrap gap-4">
               <button
                 onClick={onGetStarted}
-                className="group px-8 py-4 bg-[#1E40AF] dark:bg-blue-600 text-white rounded-xl font-bold text-lg hover:bg-[#1E3A8A] dark:hover:bg-blue-700 hover:shadow-lg transition-all duration-300 flex items-center gap-2"
+                className="group px-8 py-4 bg-[#0EA5E9] text-white rounded-full font-semibold text-lg hover:bg-[#0284C7] shadow-[0_15px_40px_rgba(14,165,233,0.35)] transition-all duration-300 flex items-center gap-2"
               >
-                Get Started Free
+                Launch Dashboard
                 <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                 </svg>
               </button>
               <button
                 onClick={() => scrollToSection('services')}
-                className="px-8 py-4 border-2 border-[#E2E8F0] dark:border-gray-700 text-[#0F172A] dark:text-white bg-white dark:bg-gray-800 rounded-xl font-bold text-lg hover:border-[#1E40AF] dark:hover:border-blue-500 hover:text-[#1E40AF] dark:hover:text-blue-400 transition-all duration-300"
+                className="px-8 py-4 border border-slate-300 dark:border-white/20 text-slate-800 dark:text-white rounded-full font-semibold text-lg hover:border-cyan-300 hover:text-cyan-500 dark:hover:text-cyan-200 transition-all duration-300"
               >
-                Explore Features
+                Explore Capabilities
               </button>
             </div>
-            
-            {/* Trust Indicators */}
-            <div className="flex flex-wrap items-center gap-8 pt-4">
-              <div className="flex items-center gap-3">
-                <div className="flex -space-x-2">
-                  <div className="w-10 h-10 rounded-full bg-[#1E40AF] dark:bg-blue-600 border-2 border-white dark:border-gray-800 shadow-md flex items-center justify-center text-sm font-bold text-white">A</div>
-                  <div className="w-10 h-10 rounded-full bg-[#0F766E] dark:bg-teal-600 border-2 border-white dark:border-gray-800 shadow-md flex items-center justify-center text-sm font-bold text-white">B</div>
-                  <div className="w-10 h-10 rounded-full bg-[#1E3A8A] dark:bg-blue-700 border-2 border-white dark:border-gray-800 shadow-md flex items-center justify-center text-sm font-bold text-white">C</div>
+
+            <div className="grid sm:grid-cols-3 gap-4 pt-6">
+              {[
+                { label: 'Markets tracked', value: '100+ equities' },
+                { label: 'Signals per day', value: '2,500+' },
+                { label: 'Analyst grade AI', value: 'FinBERT + Gemini' }
+              ].map((item) => (
+                <div key={item.label} className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">{item.label}</p>
+                  <p className="text-lg font-semibold text-slate-900 dark:text-white mt-2">{item.value}</p>
                 </div>
-                <div>
-                  <div className="text-sm font-semibold text-[#0F172A] dark:text-white">10,000+ Users</div>
-                  <div className="text-xs text-[#64748B] dark:text-gray-400">Trusted worldwide</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <svg key={star} className="w-5 h-5 text-[#1E40AF] dark:text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                    </svg>
-                  ))}
-                </div>
-                <div>
-                  <div className="text-sm font-bold text-[#0F172A] dark:text-white">4.9/5</div>
-                  <div className="text-xs text-[#64748B] dark:text-gray-400">Average rating</div>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
           
           {/* Enhanced Dashboard Preview */}
           <div className="relative">
-            <div className="relative rounded-2xl overflow-hidden border border-[#E2E8F0] dark:border-gray-700 shadow-xl backdrop-blur-sm transform hover:scale-[1.02] transition-transform duration-500">
-              <div className="bg-white dark:bg-gray-800 backdrop-blur-xl p-8">
+            <div className="relative rounded-3xl overflow-hidden border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0F172A]/80 shadow-[0_30px_80px_rgba(15,23,42,0.2)] dark:shadow-[0_30px_80px_rgba(15,23,42,0.8)] backdrop-blur-xl">
+              <div className="p-8">
                 {/* Browser Bar */}
-                <div className="flex items-center gap-2 mb-6 pb-4 border-b border-[#E2E8F0] dark:border-gray-700">
+                <div className="flex items-center gap-2 mb-6 pb-4 border-b border-slate-200 dark:border-white/10">
                   <div className="w-3 h-3 rounded-full bg-red-500"></div>
                   <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
                   <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                  <div className="ml-4 px-3 py-1 bg-[#F8FAFC] dark:bg-gray-700 rounded text-xs text-[#64748B] dark:text-gray-400">newsinsight.ai</div>
+                  <div className="ml-4 px-3 py-1 bg-slate-100 dark:bg-white/10 rounded-full text-xs text-slate-600 dark:text-slate-300">newsinsight.ai</div>
                 </div>
                 
                 {/* Dashboard Content */}
                 <div className="space-y-5">
                   {/* Market Overview Card */}
-                  <div className="relative p-5 bg-gradient-to-br from-[#EFF6FF] to-[#F0FDFA] dark:from-blue-900/20 dark:to-teal-900/20 rounded-xl border border-[#BFDBFE] dark:border-blue-800/50 backdrop-blur-sm overflow-hidden">
-                    <div className="absolute -right-10 -top-10 w-32 h-32 bg-[#1E40AF]/10 dark:bg-blue-500/20 rounded-full blur-2xl"></div>
+                  <div className="relative p-5 bg-gradient-to-br from-[#0EA5E9]/10 to-[#22D3EE]/5 rounded-2xl border border-cyan-500/20 overflow-hidden">
+                    <div className="absolute -right-10 -top-10 w-32 h-32 bg-cyan-400/10 rounded-full blur-2xl"></div>
                     <div className="relative flex items-center justify-between">
                       <div>
-                        <div className="text-sm text-[#64748B] dark:text-gray-400 mb-1">NIFTY 50</div>
-                        <div className="text-4xl font-bold text-[#0F172A] dark:text-white">₹22,368</div>
+                        <div className="text-sm text-slate-500 dark:text-slate-400 mb-1">NIFTY 50</div>
+                        <div className="text-4xl font-bold text-slate-900 dark:text-white">₹22,368</div>
                         <div className="flex items-center gap-2 mt-2">
-                          <span className="text-[#15803D] dark:text-green-400 font-bold text-lg">+347.50</span>
-                          <span className="px-2 py-1 bg-[#DCFCE7] dark:bg-green-900/30 text-[#15803D] dark:text-green-400 rounded text-sm font-semibold">+1.58%</span>
+                          <span className="text-emerald-400 font-bold text-lg">+347.50</span>
+                          <span className="px-2 py-1 bg-emerald-500/20 text-emerald-300 rounded text-sm font-semibold">+1.58%</span>
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-xs text-[#64748B] dark:text-gray-400">Live Updates</div>
-                        <div className="flex items-center gap-1 text-[#15803D] dark:text-green-400 mt-1">
-                          <span className="w-2 h-2 bg-[#15803D] dark:bg-green-400 rounded-full animate-pulse"></span>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">Live Updates</div>
+                        <div className="flex items-center gap-1 text-emerald-400 mt-1">
+                          <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>
                           <span className="text-xs font-medium">Active</span>
                         </div>
                       </div>
@@ -544,43 +1178,43 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                   </div>
                   
                   {/* Mini Chart */}
-                  <div className="p-4 bg-[#F8FAFC] dark:bg-gray-700/50 rounded-xl border border-[#E2E8F0] dark:border-gray-600 backdrop-blur-sm">
+                  <div className="p-4 bg-slate-100 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10">
                     <div className="flex items-center justify-between mb-3">
-                      <span className="text-xs text-[#64748B] dark:text-gray-400 font-medium">24H PERFORMANCE</span>
-                      <span className="text-xs text-[#15803D] dark:text-green-400 font-semibold">↗ Trending Up</span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">24H PERFORMANCE</span>
+                      <span className="text-xs text-emerald-400 font-semibold">↗ Trending Up</span>
                     </div>
                     <div className="h-24">
                       <svg className="w-full h-full" viewBox="0 0 400 80" preserveAspectRatio="none">
                         <defs>
                           <linearGradient id="chartGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stopColor="rgba(30, 64, 175, 0.3)" />
-                            <stop offset="100%" stopColor="rgba(30, 64, 175, 0)" />
+                            <stop offset="0%" stopColor="rgba(14, 165, 233, 0.35)" />
+                            <stop offset="100%" stopColor="rgba(14, 165, 233, 0)" />
                           </linearGradient>
                         </defs>
                         <path d="M0,60 L40,55 L80,50 L120,45 L160,35 L200,30 L240,25 L280,22 L320,18 L360,15 L400,10" 
                           fill="url(#chartGradient)" />
                         <path d="M0,60 L40,55 L80,50 L120,45 L160,35 L200,30 L240,25 L280,22 L320,18 L360,15 L400,10" 
-                          stroke="rgb(30, 64, 175)" strokeWidth="2.5" fill="none" />
+                          stroke="rgb(14, 165, 233)" strokeWidth="2.5" fill="none" />
                       </svg>
                     </div>
                   </div>
                   
                   {/* Sentiment Cards Grid */}
                   <div className="grid grid-cols-3 gap-3">
-                    <div className="p-4 bg-[#DCFCE7] dark:bg-green-900/20 rounded-xl border border-[#BBF7D0] dark:border-green-800/50 backdrop-blur-sm hover:scale-105 transition-transform">
-                      <div className="text-xs text-[#64748B] dark:text-gray-400 mb-1">Positive</div>
-                      <div className="text-2xl font-bold text-[#15803D] dark:text-green-400">68%</div>
-                      <div className="text-xs text-[#15803D] dark:text-green-400 mt-1">↑ 12%</div>
+                    <div className="p-4 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Positive</div>
+                      <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-300">68%</div>
+                      <div className="text-xs text-emerald-600 dark:text-emerald-300 mt-1">↑ 12%</div>
                     </div>
-                    <div className="p-4 bg-[#FEE2E2] dark:bg-red-900/20 rounded-xl border border-[#FECACA] dark:border-red-800/50 backdrop-blur-sm hover:scale-105 transition-transform">
-                      <div className="text-xs text-[#64748B] dark:text-gray-400 mb-1">Negative</div>
-                      <div className="text-2xl font-bold text-[#B91C1C] dark:text-red-400">22%</div>
-                      <div className="text-xs text-[#B91C1C] dark:text-red-400 mt-1">↓ 8%</div>
+                    <div className="p-4 bg-red-500/10 rounded-xl border border-red-500/20">
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Negative</div>
+                      <div className="text-2xl font-bold text-red-600 dark:text-red-300">22%</div>
+                      <div className="text-xs text-red-600 dark:text-red-300 mt-1">↓ 8%</div>
                     </div>
-                    <div className="p-4 bg-[#F1F5F9] dark:bg-gray-700/50 rounded-xl border border-[#E2E8F0] dark:border-gray-600 backdrop-blur-sm hover:scale-105 transition-transform">
-                      <div className="text-xs text-[#64748B] dark:text-gray-400 mb-1">Neutral</div>
-                      <div className="text-2xl font-bold text-[#64748B] dark:text-gray-300">10%</div>
-                      <div className="text-xs text-[#64748B] dark:text-gray-400 mt-1">→ 0%</div>
+                    <div className="p-4 bg-white dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10">
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Neutral</div>
+                      <div className="text-2xl font-bold text-slate-800 dark:text-slate-200">10%</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">→ 0%</div>
                     </div>
                   </div>
                 </div>
@@ -588,8 +1222,8 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
             </div>
             
             {/* Enhanced Floating Elements */}
-            <div className="absolute -top-8 -right-8 w-32 h-32 bg-[#1E40AF]/10 dark:bg-blue-500/20 rounded-full blur-3xl"></div>
-            <div className="absolute -bottom-8 -left-8 w-40 h-40 bg-[#0F766E]/10 dark:bg-teal-500/20 rounded-full blur-3xl"></div>
+            <div className="absolute -top-8 -right-8 w-32 h-32 bg-cyan-400/10 rounded-full blur-3xl"></div>
+            <div className="absolute -bottom-8 -left-8 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl"></div>
           </div>
         </div>
       </section>
@@ -610,12 +1244,12 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
       `}</style>
 
       {/* Animated Ticker */}
-      <div className="relative bg-white dark:bg-gray-800 border-y border-[#E2E8F0] dark:border-gray-700 overflow-hidden">
+      <div className="relative bg-slate-100 dark:bg-[#0F172A] border-y border-slate-200 dark:border-white/10 overflow-hidden">
         <div className="flex animate-scroll">
           {[...companies, ...companies].map((company, index) => (
             <div key={index} className="flex items-center gap-3 px-8 py-4 whitespace-nowrap">
-              <span className="text-[#0F172A] dark:text-white font-medium">{company.name}</span>
-              <span className={`font-bold ${company.positive ? 'text-[#15803D] dark:text-green-400' : 'text-[#B91C1C] dark:text-red-400'}`}>
+              <span className="text-slate-700 dark:text-slate-200 font-medium">{company.name}</span>
+              <span className={`font-bold ${company.positive ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                 {company.change}
               </span>
             </div>
@@ -638,11 +1272,11 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
       `}</style>
 
       {/* News Section */}
-      <section id="news" className="py-20 px-6 bg-[#F8FAFC] dark:bg-gray-800 border-t border-[#E2E8F0] dark:border-gray-700 transition-colors duration-300">
+      <section id="news" className="py-20 px-6 bg-slate-50 dark:bg-[#0F172A] border-t border-slate-200 dark:border-white/10">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-12">
-            <h2 className="text-4xl font-bold text-[#0F172A] dark:text-white mb-4">Latest News Coverage</h2>
-            <p className="text-xl text-[#64748B] dark:text-gray-400">Real-time news from multiple sources with AI-powered sentiment analysis</p>
+            <h2 className="text-4xl font-bold text-slate-900 dark:text-white mb-4">Market Pulse</h2>
+            <p className="text-lg text-slate-600 dark:text-slate-300">Real-time headlines ranked by sentiment and momentum.</p>
           </div>
           <div className="grid md:grid-cols-3 gap-8">
             {[
@@ -650,28 +1284,28 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
               { company: 'Tata Motors', sentiment: 'neutral', count: 189, change: '+5%' },
               { company: 'Infosys', sentiment: 'positive', count: 312, change: '+18%' }
             ].map((item, index) => (
-              <div key={index} className="bg-white dark:bg-gray-700 rounded-xl p-6 hover:shadow-xl border border-[#E2E8F0] dark:border-gray-600 hover:border-[#1E40AF] dark:hover:border-blue-500 transition-all group">
+              <div key={index} className="bg-white dark:bg-[#0B0F1A] rounded-2xl p-6 border border-slate-200 dark:border-white/10 hover:border-cyan-400/40 transition-all group">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <span className="text-3xl">{item.icon}</span>
-                    <h3 className="text-xl font-bold text-[#0F172A] dark:text-white">{item.company}</h3>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">{item.company}</h3>
                   </div>
                   <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                    item.sentiment === 'positive' ? 'bg-[#DCFCE7] dark:bg-green-900/30 text-[#15803D] dark:text-green-400 border border-[#BBF7D0] dark:border-green-700/50' :
-                    item.sentiment === 'negative' ? 'bg-[#FEE2E2] dark:bg-red-900/30 text-[#B91C1C] dark:text-red-400 border border-[#FECACA] dark:border-red-700/50' :
-                    'bg-[#F1F5F9] dark:bg-gray-600/30 text-[#64748B] dark:text-gray-300 border border-[#E2E8F0] dark:border-gray-600'
+                    item.sentiment === 'positive' ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30' :
+                    item.sentiment === 'negative' ? 'bg-red-500/20 text-red-600 dark:text-red-300 border border-red-500/30' :
+                    'bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-white/10'
                   }`}>
                     {item.sentiment}
                   </span>
                 </div>
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-[#64748B] dark:text-gray-400">Articles Today</span>
-                    <span className="font-semibold text-[#0F172A] dark:text-white">{item.count}</span>
+                    <span className="text-slate-500 dark:text-slate-400">Articles Today</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">{item.count}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-[#64748B] dark:text-gray-400">Sentiment Change</span>
-                    <span className="font-semibold text-[#15803D] dark:text-green-400">{item.change}</span>
+                    <span className="text-slate-500 dark:text-slate-400">Sentiment Change</span>
+                    <span className="font-semibold text-emerald-500 dark:text-emerald-400">{item.change}</span>
                   </div>
                 </div>
               </div>
@@ -681,11 +1315,11 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
       </section>
 
       {/* Services Section */}
-      <section id="services" className="py-20 px-6 bg-white dark:bg-gray-900">
+      <section id="services" className="py-20 px-6 bg-white dark:bg-[#0B0F1A]">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-12">
-            <h2 className="text-4xl font-bold text-[#0F172A] dark:text-white mb-4">Our Services</h2>
-            <p className="text-xl text-[#64748B] dark:text-gray-400">AI-powered tools for intelligent news analysis and chat assistance</p>
+            <h2 className="text-4xl font-bold text-slate-900 dark:text-white mb-4">Professional Market Toolkit</h2>
+            <p className="text-lg text-slate-600 dark:text-slate-300">Analytics, sentiment, and signal layers designed for active traders.</p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             <ServiceCard
@@ -757,36 +1391,36 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
       </section>
 
       {/* About Us Section */}
-      <section id="about" className="py-20 px-6 bg-[#F8FAFC] dark:bg-gray-800 transition-colors duration-300">
+      <section id="about" className="py-20 px-6 bg-slate-50 dark:bg-[#0F172A]">
         <div className="max-w-7xl mx-auto">
           <div className="grid md:grid-cols-2 gap-12 items-center">
             <div>
-              <h2 className="text-4xl font-bold text-[#0F172A] dark:text-white mb-6">About NewsInsight</h2>
-              <p className="text-lg text-[#64748B] dark:text-gray-400 mb-4">
+              <h2 className="text-4xl font-bold text-slate-900 dark:text-white mb-6">About NewsInsight</h2>
+              <p className="text-lg text-slate-600 dark:text-slate-300 mb-4">
                 NewsInsight is a cutting-edge platform that combines real-time news aggregation with advanced AI-powered sentiment analysis. 
                 We help investors, analysts, and business professionals make informed decisions by providing comprehensive insights into 
                 company news and market sentiment.
               </p>
-              <p className="text-lg text-[#64748B] dark:text-gray-400 mb-6">
+              <p className="text-lg text-slate-600 dark:text-slate-300 mb-6">
                 Our platform leverages the FinBERT ML model, specifically trained on financial text, to deliver highly accurate sentiment 
                 predictions. With support for major Indian and international companies, we provide unparalleled coverage and insights.
               </p>
               <div className="grid grid-cols-2 gap-6">
-                <div className="bg-[#EFF6FF] dark:bg-blue-900/30 rounded-lg p-4 border border-[#BFDBFE] dark:border-blue-800/50">
-                  <h3 className="text-3xl font-bold text-[#1E40AF] dark:text-blue-400 mb-2">95-98%</h3>
-                  <p className="text-sm text-[#64748B] dark:text-gray-400">Sentiment Accuracy</p>
+                <div className="bg-white dark:bg-white/5 rounded-xl p-4 border border-slate-200 dark:border-white/10">
+                  <h3 className="text-3xl font-bold text-cyan-600 dark:text-cyan-200 mb-2">95-98%</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Sentiment Accuracy</p>
                 </div>
-                <div className="bg-[#F5F3FF] dark:bg-purple-900/30 rounded-lg p-4 border border-[#DDD6FE] dark:border-purple-800/50">
-                  <h3 className="text-3xl font-bold text-[#7C3AED] dark:text-purple-400 mb-2">24/7</h3>
-                  <p className="text-sm text-[#64748B] dark:text-gray-400">Real-Time Updates</p>
+                <div className="bg-white dark:bg-white/5 rounded-xl p-4 border border-slate-200 dark:border-white/10">
+                  <h3 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">24/7</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Real-Time Updates</p>
                 </div>
-                <div className="bg-[#DCFCE7] dark:bg-green-900/30 rounded-lg p-4 border border-[#BBF7D0] dark:border-green-800/50">
-                  <h3 className="text-3xl font-bold text-[#15803D] dark:text-green-400 mb-2">100+</h3>
-                  <p className="text-sm text-[#64748B] dark:text-gray-400">Companies Tracked</p>
+                <div className="bg-white dark:bg-white/5 rounded-xl p-4 border border-slate-200 dark:border-white/10">
+                  <h3 className="text-3xl font-bold text-emerald-500 dark:text-emerald-300 mb-2">100+</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Companies Tracked</p>
                 </div>
-                <div className="bg-[#FFF7ED] dark:bg-orange-900/30 rounded-lg p-4 border border-[#FED7AA] dark:border-orange-800/50">
-                  <h3 className="text-3xl font-bold text-[#C2410C] dark:text-orange-400 mb-2">1000+</h3>
-                  <p className="text-sm text-[#64748B] dark:text-gray-400">Daily Articles</p>
+                <div className="bg-white dark:bg-white/5 rounded-xl p-4 border border-slate-200 dark:border-white/10">
+                  <h3 className="text-3xl font-bold text-orange-500 dark:text-orange-300 mb-2">1000+</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Daily Articles</p>
                 </div>
               </div>
             </div>
@@ -809,72 +1443,72 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
       </section>
 
       {/* Contact Section - Enhanced */}
-      <section id="contact" className="py-20 px-6 bg-white dark:bg-gray-900 relative overflow-hidden">
+      <section id="contact" className="py-20 px-6 bg-white dark:bg-[#0B0F1A] relative overflow-hidden">
         {/* Background Elements */}
-        <div className="absolute inset-0 opacity-30 dark:opacity-20">
-          <div className="absolute top-20 left-20 w-64 h-64 bg-[#1E40AF]/10 dark:bg-blue-500/20 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-20 right-20 w-80 h-80 bg-[#0F766E]/10 dark:bg-teal-500/20 rounded-full blur-3xl"></div>
+        <div className="absolute inset-0 opacity-30">
+          <div className="absolute top-20 left-20 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl"></div>
+          <div className="absolute bottom-20 right-20 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl"></div>
         </div>
 
         <div className="max-w-6xl mx-auto relative z-10">
           <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#EFF6FF] dark:bg-blue-900/30 border border-[#BFDBFE] dark:border-blue-700/50 rounded-full mb-4">
-              <svg className="w-4 h-4 text-[#1E40AF] dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-white/10 border border-slate-200 dark:border-white/10 rounded-full mb-4 text-slate-700 dark:text-cyan-200">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
-              <span className="text-sm font-semibold text-[#1E40AF] dark:text-blue-400">Let's Connect</span>
+              <span className="text-sm font-semibold">Let's Connect</span>
             </div>
-            <h2 className="text-4xl md:text-5xl font-bold text-[#0F172A] dark:text-white mb-4">Get in Touch</h2>
-            <p className="text-xl text-[#64748B] dark:text-gray-400 max-w-2xl mx-auto">Have questions? Our team is here to help you get started with NewsInsight.</p>
+            <h2 className="text-4xl md:text-5xl font-bold text-slate-900 dark:text-white mb-4">Talk to the Desk</h2>
+            <p className="text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">Need a walkthrough or custom workflow? We will help you set it up.</p>
           </div>
 
           <div className="grid md:grid-cols-5 gap-8 items-start">
             {/* Contact Info Cards */}
             <div className="md:col-span-2 space-y-4">
-              <div className="group p-6 bg-white dark:bg-gray-800 rounded-2xl border border-[#E2E8F0] dark:border-gray-700 backdrop-blur-sm hover:border-[#1E40AF] dark:hover:border-blue-500 hover:shadow-lg transition-all duration-300">
-                <div className="w-14 h-14 bg-[#1E40AF] dark:bg-blue-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-md">
+              <div className="group p-6 bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/10 hover:border-cyan-400/40 transition-all duration-300">
+                <div className="w-14 h-14 bg-[#0EA5E9] rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-md">
                   <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-bold text-[#0F172A] dark:text-white mb-2">Email Us</h3>
-                <p className="text-[#64748B] dark:text-gray-400 text-sm mb-3">Send us an email anytime</p>
-                <a href="mailto:contact@newsinsight.com" className="text-[#1E40AF] dark:text-blue-400 hover:text-[#1E3A8A] dark:hover:text-blue-300 font-semibold text-sm">newsinsight@gmail.com</a>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Email Us</h3>
+                <p className="text-slate-500 dark:text-slate-400 text-sm mb-3">Send us an email anytime</p>
+                <a href="mailto:contact@newsinsight.com" className="text-cyan-600 dark:text-cyan-200 hover:text-cyan-500 dark:hover:text-cyan-100 font-semibold text-sm">newsinsight@gmail.com</a>
               </div>
 
-              <div className="group p-6 bg-white dark:bg-gray-800 rounded-2xl border border-[#E2E8F0] dark:border-gray-700 backdrop-blur-sm hover:border-[#1E40AF] dark:hover:border-blue-500 hover:shadow-lg transition-all duration-300">
-                <div className="w-14 h-14 bg-[#1E40AF] dark:bg-blue-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-md">
+              <div className="group p-6 bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/10 hover:border-cyan-400/40 transition-all duration-300">
+                <div className="w-14 h-14 bg-[#0EA5E9] rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-md">
                   <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-bold text-[#0F172A] dark:text-white mb-2">Call Us</h3>
-                <p className="text-[#64748B] dark:text-gray-400 text-sm mb-3">Mon-Fri, 9am-6pm IST</p>
-                <a href="tel:+911234567890" className="text-[#1E40AF] dark:text-blue-400 hover:text-[#1E3A8A] dark:hover:text-blue-300 font-semibold text-sm">+91 7499418984</a>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Call Us</h3>
+                <p className="text-slate-500 dark:text-slate-400 text-sm mb-3">Mon-Fri, 9am-6pm IST</p>
+                <a href="tel:+911234567890" className="text-cyan-600 dark:text-cyan-200 hover:text-cyan-500 dark:hover:text-cyan-100 font-semibold text-sm">+91 7499418984</a>
               </div>
 
-              <div className="group p-6 bg-white dark:bg-gray-800 rounded-2xl border border-[#E2E8F0] dark:border-gray-700 backdrop-blur-sm hover:border-[#1E40AF] dark:hover:border-blue-500 hover:shadow-lg transition-all duration-300">
-                <div className="w-14 h-14 bg-[#1E40AF] dark:bg-blue-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-md">
+              <div className="group p-6 bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/10 hover:border-cyan-400/40 transition-all duration-300">
+                <div className="w-14 h-14 bg-[#0EA5E9] rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-md">
                   <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-bold text-[#0F172A] dark:text-white mb-2">Visit Office</h3>
-                <p className="text-[#64748B] dark:text-gray-400 text-sm mb-3">Come lets meet</p>
-                <p className="text-[#1E40AF] dark:text-blue-400 font-semibold text-sm">Raigad, Maharashtra, India</p>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Visit Office</h3>
+                <p className="text-slate-500 dark:text-slate-400 text-sm mb-3">Come lets meet</p>
+                <p className="text-cyan-600 dark:text-cyan-200 font-semibold text-sm">Raigad, Maharashtra, India</p>
               </div>
             </div>
 
             {/* Contact Form */}
             <div className="md:col-span-3">
-              <div className="bg-white dark:bg-gray-800 rounded-2xl border border-[#E2E8F0] dark:border-gray-700 backdrop-blur-xl p-8 shadow-lg">
+              <div className="bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/10 backdrop-blur-xl p-8 shadow-lg">
                 {/* Success/Error Message */}
                 {submitMessage.text && (
                   <div className={`mb-6 p-4 rounded-xl border ${
                     submitMessage.type === 'success'
-                      ? 'bg-[#DCFCE7] dark:bg-green-900/30 border-[#BBF7D0] dark:border-green-700/50 text-[#15803D] dark:text-green-400'
-                      : 'bg-[#FEE2E2] dark:bg-red-900/30 border-[#FECACA] dark:border-red-700/50 text-[#B91C1C] dark:text-red-400'
+                      ? 'bg-emerald-500/10 dark:bg-emerald-500/20 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-red-500/10 dark:bg-red-500/20 border-red-500/30 text-red-700 dark:text-red-300'
                   } flex items-start gap-3 animate-fadeIn`}>
                     <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       {submitMessage.type === 'success' ? (
@@ -890,26 +1524,26 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                 <form onSubmit={handleContactSubmit} className="space-y-5">
                   <div className="grid md:grid-cols-2 gap-5">
                     <div className="group">
-                      <label className="block text-sm font-semibold text-[#0F172A] dark:text-white mb-2">Full Name *</label>
+                      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Full Name *</label>
                       <input
                         type="text"
                         name="fullName"
                         value={contactForm.fullName}
                         onChange={handleContactInputChange}
-                        className="w-full px-4 py-3.5 rounded-xl border border-[#E2E8F0] dark:border-gray-600 bg-[#F8FAFC] dark:bg-gray-700 text-[#0F172A] dark:text-white placeholder-[#94A3B8] dark:placeholder-gray-400 focus:ring-2 focus:ring-[#1E40AF] dark:focus:ring-blue-500 focus:border-transparent transition-all group-hover:border-[#CBD5E1] dark:group-hover:border-gray-500"
+                        className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all"
                         placeholder="John Doe"
                         required
                         disabled={isSubmitting}
                       />
                     </div>
                     <div className="group">
-                      <label className="block text-sm font-semibold text-[#0F172A] dark:text-white mb-2">Email Address *</label>
+                      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Email Address *</label>
                       <input
                         type="email"
                         name="email"
                         value={contactForm.email}
                         onChange={handleContactInputChange}
-                        className="w-full px-4 py-3.5 rounded-xl border border-[#E2E8F0] dark:border-gray-600 bg-[#F8FAFC] dark:bg-gray-700 text-[#0F172A] dark:text-white placeholder-[#94A3B8] dark:placeholder-gray-400 focus:ring-2 focus:ring-[#1E40AF] dark:focus:ring-blue-500 focus:border-transparent transition-all group-hover:border-[#CBD5E1] dark:group-hover:border-gray-500"
+                        className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all"
                         placeholder="john@example.com"
                         required
                         disabled={isSubmitting}
@@ -918,26 +1552,26 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                   </div>
                   
                   <div className="group">
-                    <label className="block text-sm font-semibold text-[#0F172A] dark:text-white mb-2">Phone Number</label>
+                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Phone Number</label>
                     <input
                       type="tel"
                       name="phoneNumber"
                       value={contactForm.phoneNumber}
                       onChange={handleContactInputChange}
-                      className="w-full px-4 py-3.5 rounded-xl border border-[#E2E8F0] dark:border-gray-600 bg-[#F8FAFC] dark:bg-gray-700 text-[#0F172A] dark:text-white placeholder-[#94A3B8] dark:placeholder-gray-400 focus:ring-2 focus:ring-[#1E40AF] dark:focus:ring-blue-500 focus:border-transparent transition-all group-hover:border-[#CBD5E1] dark:group-hover:border-gray-500"
+                      className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all"
                       placeholder="+91 98765 43210"
                       disabled={isSubmitting}
                     />
                   </div>
 
                   <div className="group">
-                    <label className="block text-sm font-semibold text-[#0F172A] dark:text-white mb-2">Subject *</label>
+                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Subject *</label>
                     <input
                       type="text"
                       name="subject"
                       value={contactForm.subject}
                       onChange={handleContactInputChange}
-                      className="w-full px-4 py-3.5 rounded-xl border border-[#E2E8F0] dark:border-gray-600 bg-[#F8FAFC] dark:bg-gray-700 text-[#0F172A] dark:text-white placeholder-[#94A3B8] dark:placeholder-gray-400 focus:ring-2 focus:ring-[#1E40AF] dark:focus:ring-blue-500 focus:border-transparent transition-all group-hover:border-[#CBD5E1] dark:group-hover:border-gray-500"
+                      className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all"
                       placeholder="How can we help you?"
                       required
                       disabled={isSubmitting}
@@ -945,13 +1579,13 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                   </div>
 
                   <div className="group">
-                    <label className="block text-sm font-semibold text-[#0F172A] dark:text-white mb-2">Message *</label>
+                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Message *</label>
                     <textarea
                       name="message"
                       value={contactForm.message}
                       onChange={handleContactInputChange}
                       rows={5}
-                      className="w-full px-4 py-3.5 rounded-xl border border-[#E2E8F0] dark:border-gray-600 bg-[#F8FAFC] dark:bg-gray-700 text-[#0F172A] dark:text-white placeholder-[#94A3B8] dark:placeholder-gray-400 focus:ring-2 focus:ring-[#1E40AF] dark:focus:ring-blue-500 focus:border-transparent transition-all resize-none group-hover:border-[#CBD5E1] dark:group-hover:border-gray-500"
+                      className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all resize-none"
                       placeholder="Tell us more about your inquiry..."
                       required
                       disabled={isSubmitting}
@@ -961,7 +1595,7 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="group w-full py-4 bg-[#1E40AF] dark:bg-blue-600 text-white rounded-xl font-bold text-lg hover:bg-[#1E3A8A] dark:hover:bg-blue-700 hover:shadow-lg transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="group w-full py-4 bg-[#0EA5E9] text-white rounded-xl font-bold text-lg hover:bg-[#0284C7] shadow-[0_12px_30px_rgba(14,165,233,0.35)] transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isSubmitting ? (
                       <>
@@ -981,7 +1615,7 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                     )}
                   </button>
 
-                  <p className="text-xs text-[#64748B] dark:text-gray-400 text-center">We'll get back to you within 24 hours</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 text-center">We'll get back to you within 24 hours</p>
                 </form>
               </div>
             </div>
@@ -990,46 +1624,46 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
       </section>
 
       {/* Footer - Enhanced */}
-      <footer className="bg-[#0F172A] dark:bg-gray-950 border-t border-[#1E293B] dark:border-gray-900 text-white py-16 px-6">
+      <footer className="bg-slate-50 dark:bg-[#0B0F1A] border-t border-slate-200 dark:border-white/10 text-slate-900 dark:text-white py-16 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="grid md:grid-cols-12 gap-12 mb-12">
             {/* Brand Section */}
             <div className="md:col-span-4">
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-[#1E40AF] dark:bg-blue-600 rounded-xl flex items-center justify-center shadow-md">
+                <div className="w-12 h-12 bg-[#0EA5E9] rounded-xl flex items-center justify-center shadow-md">
                   <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 </div>
                 <div>
-                  <div className="text-2xl font-bold text-white">
+                  <div className="text-2xl font-bold text-slate-900 dark:text-white">
                     NEWSINSIGHT
                   </div>
-                  <div className="text-[10px] text-[#94A3B8] dark:text-gray-500 -mt-1 tracking-wider">AI-POWERED ANALYTICS</div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 -mt-1 tracking-wider">AI-POWERED ANALYTICS</div>
                 </div>
               </div>
-              <p className="text-[#94A3B8] dark:text-gray-400 text-sm leading-relaxed mb-6">
+              <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed mb-6">
                 Transform market intelligence with AI-powered sentiment analysis and real-time updates. Make data-driven decisions with confidence.
               </p>
               <div className="flex gap-3">
-                <a href="https://x.com/home" className="group w-11 h-11 bg-[#1E293B] dark:bg-gray-800 hover:bg-[#1E40AF] dark:hover:bg-blue-600 rounded-xl flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg">
-                  <svg className="w-5 h-5 text-[#94A3B8] dark:text-gray-400 group-hover:text-white transition-colors" fill="currentColor" viewBox="0 0 24 24">
+                <a href="https://x.com/home" className="group w-11 h-11 bg-white dark:bg-white/5 border border-slate-200 dark:border-transparent hover:bg-cyan-500/20 rounded-xl flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg">
+                  <svg className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M23 3a10.9 10.9 0 01-3.14 1.53 4.48 4.48 0 00-7.86 3v1A10.66 10.66 0 013 4s-4 9 5 13a11.64 11.64 0 01-7 2c9 5 20 0 20-11.5a4.5 4.5 0 00-.08-.83A7.72 7.72 0 0023 3z"></path>
                   </svg>
                 </a>
-                <a href="https://www.linkedin.com/in/ashish-jumare/" className="group w-11 h-11 bg-[#1E293B] dark:bg-gray-800 hover:bg-[#1E40AF] dark:hover:bg-blue-600 rounded-xl flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg">
-                  <svg className="w-5 h-5 text-[#94A3B8] dark:text-gray-400 group-hover:text-white transition-colors" fill="currentColor" viewBox="0 0 24 24">
+                <a href="https://www.linkedin.com/in/ashish-jumare/" className="group w-11 h-11 bg-white dark:bg-white/5 border border-slate-200 dark:border-transparent hover:bg-cyan-500/20 rounded-xl flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg">
+                  <svg className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2z"></path>
                     <circle cx="4" cy="4" r="2"></circle>
                   </svg>
                 </a>
-                <a href="https://www.linkedin.com/in/ashish-jumare/" className="group w-11 h-11 bg-[#1E293B] dark:bg-gray-800 hover:bg-[#1E40AF] dark:hover:bg-blue-600 rounded-xl flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg">
-                  <svg className="w-5 h-5 text-[#94A3B8] dark:text-gray-400 group-hover:text-white transition-colors" fill="currentColor" viewBox="0 0 24 24">
+                <a href="https://www.linkedin.com/in/ashish-jumare/" className="group w-11 h-11 bg-white dark:bg-white/5 border border-slate-200 dark:border-transparent hover:bg-cyan-500/20 rounded-xl flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg">
+                  <svg className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"></path>
                   </svg>
                 </a>
-                <a href="https://www.linkedin.com/in/ashish-jumare/" className="group w-11 h-11 bg-[#1E293B] dark:bg-gray-800 hover:bg-[#1E40AF] dark:hover:bg-blue-600 rounded-xl flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg">
-                  <svg className="w-5 h-5 text-[#94A3B8] dark:text-gray-400 group-hover:text-white transition-colors" fill="currentColor" viewBox="0 0 24 24">
+                <a href="https://www.linkedin.com/in/ashish-jumare/" className="group w-11 h-11 bg-white dark:bg-white/5 border border-slate-200 dark:border-transparent hover:bg-cyan-500/20 rounded-xl flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-lg">
+                  <svg className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"></path>
                   </svg>
                 </a>
@@ -1038,51 +1672,51 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
 
             {/* Quick Links */}
             <div className="md:col-span-2">
-              <h3 className="font-bold text-white mb-5 text-sm uppercase tracking-wider">Product</h3>
+              <h3 className="font-bold text-slate-900 dark:text-white mb-5 text-sm uppercase tracking-wider">Product</h3>
               <ul className="space-y-3">
-                <li><button onClick={() => scrollToSection('home')} className="text-[#94A3B8] hover:text-white transition-colors text-sm">Home</button></li>
-                <li><button onClick={() => scrollToSection('news')} className="text-[#94A3B8] hover:text-white transition-colors text-sm">News Feed</button></li>
-                <li><button onClick={() => scrollToSection('services')} className="text-[#94A3B8] hover:text-white transition-colors text-sm">Services</button></li>
-                <li><button onClick={() => scrollToSection('about')} className="text-[#94A3B8] hover:text-white transition-colors text-sm">About Us</button></li>
-                <li><a href="#" className="text-[#94A3B8] hover:text-white transition-colors text-sm">Pricing</a></li>
+                <li><button onClick={() => scrollToSection('home')} className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm">Home</button></li>
+                <li><button onClick={() => scrollToSection('news')} className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm">News Feed</button></li>
+                <li><button onClick={() => scrollToSection('services')} className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm">Services</button></li>
+                <li><button onClick={() => scrollToSection('about')} className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm">About Us</button></li>
+                <li><a href="#" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm">Pricing</a></li>
               </ul>
             </div>
 
             {/* Resources */}
             <div className="md:col-span-2">
-              <h3 className="font-bold text-white mb-5 text-sm uppercase tracking-wider">Resources</h3>
+              <h3 className="font-bold text-slate-900 dark:text-white mb-5 text-sm uppercase tracking-wider">Resources</h3>
               <ul className="space-y-3">
-                <li><a href="#" className="text-[#94A3B8] hover:text-white transition-colors text-sm">Documentation</a></li>
-                <li><a href="#" className="text-[#94A3B8] hover:text-white transition-colors text-sm">API Reference</a></li>
-                <li><a href="#" className="text-[#94A3B8] hover:text-white transition-colors text-sm">Tutorials</a></li>
-                <li><a href="#" className="text-[#94A3B8] hover:text-white transition-colors text-sm">Blog</a></li>
-                <li><a href="#" className="text-[#94A3B8] hover:text-white transition-colors text-sm">Changelog</a></li>
+                <li><a href="#" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm">Documentation</a></li>
+                <li><a href="#" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm">API Reference</a></li>
+                <li><a href="#" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm">Tutorials</a></li>
+                <li><a href="#" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm">Blog</a></li>
+                <li><a href="#" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm">Changelog</a></li>
               </ul>
             </div>
 
             {/* Support */}
             <div className="md:col-span-2">
-              <h3 className="font-bold text-white mb-5 text-sm uppercase tracking-wider">Support</h3>
+              <h3 className="font-bold text-slate-900 dark:text-white mb-5 text-sm uppercase tracking-wider">Support</h3>
               <ul className="space-y-3">
-                <li><a href="#" className="text-[#94A3B8] hover:text-white transition-colors text-sm">Help Center</a></li>
-                <li><a href="#" className="text-[#94A3B8] hover:text-white transition-colors text-sm">Contact Us</a></li>
-                <li><a href="#" className="text-[#94A3B8] hover:text-white transition-colors text-sm">Privacy Policy</a></li>
-                <li><a href="#" className="text-[#94A3B8] hover:text-white transition-colors text-sm">Terms of Service</a></li>
-                <li><a href="#" className="text-[#94A3B8] hover:text-white transition-colors text-sm">Status</a></li>
+                <li><a href="#" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm">Help Center</a></li>
+                <li><a href="#" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm">Contact Us</a></li>
+                <li><a href="#" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm">Privacy Policy</a></li>
+                <li><a href="#" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm">Terms of Service</a></li>
+                <li><a href="#" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors text-sm">Status</a></li>
               </ul>
             </div>
 
             {/* Newsletter */}
             <div className="md:col-span-2">
-              <h3 className="font-bold text-white mb-5 text-sm uppercase tracking-wider">Newsletter</h3>
-              <p className="text-[#94A3B8] dark:text-gray-400 text-sm mb-4">Get the latest news and updates</p>
+              <h3 className="font-bold text-slate-900 dark:text-white mb-5 text-sm uppercase tracking-wider">Newsletter</h3>
+              <p className="text-slate-600 dark:text-slate-400 text-sm mb-4">Get the latest news and updates</p>
               <div className="flex flex-col gap-2">
                 <input
                   type="email"
                   placeholder="your@email.com"
-                  className="px-4 py-2.5 rounded-xl bg-[#1E293B] dark:bg-gray-800 border border-[#334155] dark:border-gray-700 text-white text-sm placeholder-[#64748B] dark:placeholder-gray-500 focus:ring-2 focus:ring-[#1E40AF] dark:focus:ring-blue-500 focus:border-transparent transition-all"
+                  className="px-4 py-2.5 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white text-sm placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all"
                 />
-                <button className="px-4 py-2.5 bg-[#1E40AF] dark:bg-blue-600 text-white rounded-xl font-semibold text-sm hover:bg-[#1E3A8A] dark:hover:bg-blue-700 hover:shadow-lg transition-all">
+                <button className="px-4 py-2.5 bg-[#0EA5E9] text-white rounded-xl font-semibold text-sm hover:bg-[#0284C7] hover:shadow-lg transition-all">
                   Subscribe
                 </button>
               </div>
@@ -1090,16 +1724,16 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
           </div>
 
           {/* Bottom Bar */}
-          <div className="border-t border-[#1E293B] dark:border-gray-900 pt-8">
+          <div className="border-t border-slate-200 dark:border-white/10 pt-8">
             <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-              <div className="text-sm text-[#64748B] dark:text-gray-400">
-                © 2025 <span className="text-white font-semibold">NewsInsight</span>. All rights reserved. Powered by <span className="text-[#1E40AF] dark:text-blue-400">FinBERT AI</span>.
+              <div className="text-sm text-slate-600 dark:text-slate-400">
+                © 2025 <span className="text-slate-900 dark:text-white font-semibold">NewsInsight</span>. All rights reserved. Powered by <span className="text-cyan-600 dark:text-cyan-300">FinBERT AI</span>.
               </div>
               <div className="flex items-center gap-6 text-sm">
-                <a href="#" className="text-[#64748B] dark:text-gray-400 hover:text-white transition-colors">Privacy</a>
-                <a href="#" className="text-[#64748B] dark:text-gray-400 hover:text-white transition-colors">Terms</a>
-                <a href="#" className="text-[#64748B] dark:text-gray-400 hover:text-white transition-colors">Cookies</a>
-                <a href="#" className="text-[#64748B] dark:text-gray-400 hover:text-white transition-colors">Sitemap</a>
+                <a href="#" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">Privacy</a>
+                <a href="#" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">Terms</a>
+                <a href="#" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">Cookies</a>
+                <a href="#" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">Sitemap</a>
               </div>
             </div>
           </div>
@@ -1108,8 +1742,8 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
 
       {/* Login/Signup Modal */}
       {showLoginModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md p-8 relative">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-8 relative text-slate-900 dark:text-white">
             <button
               onClick={() => {
                 setShowLoginModal(false);
@@ -1117,35 +1751,35 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                 setAuthSuccess('');
                 setAuthForm({ fullName: '', email: '', password: '', confirmPassword: '' });
               }}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-900 dark:hover:text-white"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
             
-            <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-6">
+            <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">
               {isSignup ? 'Create Account' : 'Welcome Back'}
             </h2>
 
             {/* Success Message */}
             {authSuccess && (
-              <div className="mb-4 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-                <p className="text-sm text-green-800 dark:text-green-300">{authSuccess}</p>
+              <div className="mb-4 p-4 bg-emerald-500/10 dark:bg-emerald-500/20 border border-emerald-500/30 rounded-lg">
+                <p className="text-sm text-emerald-700 dark:text-emerald-200">{authSuccess}</p>
               </div>
             )}
 
             {/* Error Message */}
             {authError && (
-              <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                <p className="text-sm text-red-800 dark:text-red-300">{authError}</p>
+              <div className="mb-4 p-4 bg-red-500/10 dark:bg-red-500/20 border border-red-500/30 rounded-lg">
+                <p className="text-sm text-red-700 dark:text-red-200">{authError}</p>
               </div>
             )}
 
             <form onSubmit={handleAuthSubmit} className="space-y-4">
               {isSignup && (
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
                     Full Name
                   </label>
                   <input
@@ -1155,14 +1789,14 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                     onChange={handleAuthInputChange}
                     required
                     disabled={authLoading}
-                    className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                    className="w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0B1220] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-cyan-400 focus:border-transparent disabled:opacity-50"
                     placeholder="John Doe"
                   />
                 </div>
               )}
               
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
                   Email
                 </label>
                 <input
@@ -1172,13 +1806,13 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                   onChange={handleAuthInputChange}
                   required
                   disabled={authLoading}
-                  className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                  className="w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0B1220] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-cyan-400 focus:border-transparent disabled:opacity-50"
                   placeholder="your@email.com"
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
                   Password
                 </label>
                 <input
@@ -1189,14 +1823,14 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                   required
                   disabled={authLoading}
                   minLength={6}
-                  className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                  className="w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0B1220] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-cyan-400 focus:border-transparent disabled:opacity-50"
                   placeholder="••••••••"
                 />
               </div>
               
               {isSignup && (
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
                     Confirm Password
                   </label>
                   <input
@@ -1207,7 +1841,7 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                     required
                     disabled={authLoading}
                     minLength={6}
-                    className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                    className="w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0B1220] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-cyan-400 focus:border-transparent disabled:opacity-50"
                     placeholder="••••••••"
                   />
                 </div>
@@ -1216,7 +1850,7 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
               <button
                 type="submit"
                 disabled={authLoading}
-                className="w-full py-3 bg-[#1E40AF] dark:bg-blue-600 hover:bg-[#1E3A8A] dark:hover:bg-blue-700 text-white rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full py-3 bg-[#0EA5E9] hover:bg-[#0284C7] text-white rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {authLoading ? (
                   <>
@@ -1235,10 +1869,10 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
             {/* Divider */}
             <div className="relative my-6">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300 dark:border-gray-600"></div>
+                <div className="w-full border-t border-slate-200 dark:border-white/10"></div>
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">
+                <span className="px-2 bg-white dark:bg-[#0F172A] text-slate-500 dark:text-slate-400">
                   Or continue with
                 </span>
               </div>
@@ -1257,7 +1891,7 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
             </div>
 
             <div className="mt-6 text-center">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
                 {isSignup ? 'Already have an account?' : "Don't have an account?"}{' '}
                 <button
                   onClick={() => {
@@ -1267,7 +1901,7 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                   }}
                   type="button"
                   disabled={authLoading}
-                  className="text-blue-600 dark:text-blue-400 font-semibold hover:underline disabled:opacity-50"
+                  className="text-cyan-600 dark:text-cyan-200 font-semibold hover:underline disabled:opacity-50"
                 >
                   {isSignup ? 'Login' : 'Sign Up'}
                 </button>
@@ -1289,12 +1923,12 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
 
 function ServiceCard({ icon, title, description, gradient }) {
   return (
-    <div className="group relative bg-white dark:bg-gray-800 rounded-xl p-6 hover:shadow-lg transition-all cursor-pointer border border-[#E2E8F0] dark:border-gray-700 hover:border-[#1E40AF] dark:hover:border-blue-500 overflow-hidden">
-      <div className="absolute inset-0 bg-[#F8FAFC] dark:bg-gray-700/30 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+    <div className="group relative rounded-2xl p-6 border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 hover:border-cyan-400/40 hover:bg-slate-50 dark:hover:bg-white/10 transition-all cursor-pointer overflow-hidden">
+      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-br from-cyan-500/10 to-blue-500/10"></div>
       <div className="relative z-10">
-        <div className="text-[#1E40AF] dark:text-blue-400 mb-4 group-hover:scale-110 transition-transform">{icon}</div>
-        <h3 className="text-xl font-bold text-[#0F172A] dark:text-white mb-2">{title}</h3>
-        <p className="text-[#64748B] dark:text-gray-400 text-sm">{description}</p>
+        <div className="text-cyan-600 dark:text-cyan-200 mb-4 group-hover:-translate-y-1 transition-transform">{icon}</div>
+        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{title}</h3>
+        <p className="text-slate-600 dark:text-slate-300 text-sm">{description}</p>
       </div>
     </div>
   );
@@ -1302,9 +1936,9 @@ function ServiceCard({ icon, title, description, gradient }) {
 
 function FeatureBox({ title, description }) {
   return (
-    <div className="bg-gradient-to-r from-[#EFF6FF] to-[#F5F3FF] dark:from-blue-900/30 dark:to-purple-900/30 rounded-xl p-6 border border-[#BFDBFE] dark:border-blue-800/50">
-      <h3 className="text-xl font-bold text-[#0F172A] dark:text-white mb-3">{title}</h3>
-      <p className="text-[#64748B] dark:text-gray-400">{description}</p>
+    <div className="bg-white dark:bg-white/5 rounded-2xl p-6 border border-slate-200 dark:border-white/10">
+      <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">{title}</h3>
+      <p className="text-slate-600 dark:text-slate-300">{description}</p>
     </div>
   );
 }
