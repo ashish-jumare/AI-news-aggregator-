@@ -432,6 +432,34 @@ export default function LLMChatPage({ onClose }) {
     }
   };
 
+  const [copiedMessageId, setCopiedMessageId] = useState(null);
+
+  const formatMessageTime = (timestamp) => {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const handleCopyMessage = async (messageId, content) => {
+    if (!content) return;
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedMessageId(messageId);
+      setTimeout(() => {
+        setCopiedMessageId((current) => (current === messageId ? null : current));
+      }, 1500);
+    } catch (error) {
+      console.error('Copy failed:', error);
+    }
+  };
+
   return (
     <div className="fixed inset-0 flex h-screen w-screen bg-slate-50 text-slate-900 dark:bg-gray-900 dark:text-white overflow-hidden z-50">
       {/* Sidebar */}
@@ -740,6 +768,25 @@ export default function LLMChatPage({ onClose }) {
                           </div>
                         )}
                       </div>
+                      {message.role === 'assistant' && (
+                        <div className="mt-2 flex items-center gap-2 text-xs text-slate-400 dark:text-gray-400">
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => handleCopyMessage(message.id, message.content)}
+                              className="px-2 py-1 rounded-md border border-slate-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/60 hover:bg-slate-100 dark:hover:bg-gray-700 transition-colors"
+                            >
+                              Copy
+                            </button>
+                            {copiedMessageId === message.id && (
+                              <div className="absolute left-0 -top-7 rounded-md bg-slate-900 text-white text-[10px] px-2 py-1 shadow">
+                                Copied
+                              </div>
+                            )}
+                          </div>
+                          <span>{formatMessageTime(message.timestamp)}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -345,6 +345,26 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
     setAuthError('Google login failed. Please try again.');
   };
 
+  const handleLaunchDashboard = () => {
+    if (!isAuthenticated) {
+      setIsSignup(false);
+      setAuthError('Please log in to access the dashboard.');
+      setShowLoginModal(true);
+      return;
+    }
+    onGetStarted();
+  };
+
+  const handleOpenAnalysis = () => {
+    if (!isAuthenticated) {
+      setIsSignup(false);
+      setAuthError('Please log in to access the analysis page.');
+      setShowLoginModal(true);
+      return;
+    }
+    setShowCompanyGrid(true);
+  };
+
   // Handle contact form input changes
   const handleContactInputChange = (e) => {
     const { name, value } = e.target;
@@ -436,7 +456,7 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                 News
               </button>
               <button
-                onClick={() => setShowCompanyGrid(true)}
+                onClick={handleOpenAnalysis}
                 className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-sm font-semibold transition-all"
               >
                 Analysis
@@ -1111,7 +1131,7 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
 
             <div className="flex flex-wrap gap-4">
               <button
-                onClick={onGetStarted}
+                onClick={handleLaunchDashboard}
                 className="group px-8 py-4 bg-[#0EA5E9] text-white rounded-full font-semibold text-lg hover:bg-[#0284C7] shadow-[0_15px_40px_rgba(14,165,233,0.35)] transition-all duration-300 flex items-center gap-2"
               >
                 Launch Dashboard
@@ -1407,7 +1427,7 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
               </p>
               <div className="grid grid-cols-2 gap-6">
                 <div className="bg-white dark:bg-white/5 rounded-xl p-4 border border-slate-200 dark:border-white/10">
-                  <h3 className="text-3xl font-bold text-cyan-600 dark:text-cyan-200 mb-2">95-98%</h3>
+                  <h3 className="text-3xl font-bold text-cyan-600 dark:text-cyan-200 mb-2">86-90%</h3>
                   <p className="text-sm text-slate-500 dark:text-slate-400">Sentiment Accuracy</p>
                 </div>
                 <div className="bg-white dark:bg-white/5 rounded-xl p-4 border border-slate-200 dark:border-white/10">
