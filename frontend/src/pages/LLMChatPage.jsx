@@ -203,6 +203,15 @@ export default function LLMChatPage({ onClose }) {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
 
+    addImagesFromFiles(files);
+
+    // Reset file input
+    e.target.value = '';
+  };
+
+  const addImagesFromFiles = (files) => {
+    if (!files.length) return;
+
     // Validate file sizes (max 5MB per image)
     const maxSize = 5 * 1024 * 1024; // 5MB
     const invalidFiles = files.filter(file => file.size > maxSize);
@@ -243,9 +252,24 @@ export default function LLMChatPage({ onClose }) {
         console.error('Error reading images:', error);
         alert('Failed to load images. Please try again.');
       });
+  };
 
-    // Reset file input
-    e.target.value = '';
+  const handlePasteImage = (event) => {
+    const items = Array.from(event.clipboardData?.items || []);
+    const imageFiles = items
+      .filter((item) => item.type && item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+
+    if (!imageFiles.length) return;
+
+    event.preventDefault();
+    const normalizedFiles = imageFiles.map((file, index) => {
+      if (file.name) return file;
+      return new File([file], `pasted-image-${Date.now()}-${index}.png`, { type: file.type || 'image/png' });
+    });
+
+    addImagesFromFiles(normalizedFiles);
   };
 
   const handleRemoveImage = (index) => {
@@ -867,6 +891,7 @@ export default function LLMChatPage({ onClose }) {
                 ref={textareaRef}
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
+                onPaste={handlePasteImage}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();

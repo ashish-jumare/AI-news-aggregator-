@@ -8,7 +8,16 @@ import { API_ENDPOINTS } from '../config/api';
 import SettingsModal from '../components/SettingsModal';
 import { COMPANIES } from '../components/Sidebar';
 
-export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onOpenLLM, onSettingsChange }) {
+const getPreviousClose = (data) => {
+  if (!data) return null;
+  const history = Array.isArray(data.history) ? data.history : [];
+  const prevClose = history.length > 1 ? history[history.length - 2]?.close : null;
+  if (Number.isFinite(prevClose)) return prevClose;
+  const fallback = data.ohlc?.close;
+  return Number.isFinite(fallback) ? fallback : null;
+};
+
+export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onOpenLLM, onOpenPortfolio, onOpenAdmin, onSettingsChange }) {
   const { isDark, toggleTheme } = useTheme();
   const { user, signup, login, googleLogin, logout, isAuthenticated } = useAuth();
   const analysisApiUrl = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:5001';
@@ -210,6 +219,7 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
   };
 
   const marketStatus = isMarketOpen() ? 'Market Open' : 'Market Closed';
+  const previousCloseValue = analysisData ? getPreviousClose(analysisData) : null;
   const formatUpdateTime = (value) => {
     if (!value) return '';
     const date = new Date(value);
@@ -245,6 +255,21 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
       setShowLoginModal(true);
       setAuthError('Please login or sign up to access the LLM chat.');
     }
+  };
+
+  const handlePortfolioClick = () => {
+    if (isAuthenticated) {
+      onOpenPortfolio();
+    } else {
+      setIsSignup(false);
+      setShowLoginModal(true);
+      setAuthError('Please login or sign up to access the portfolio.');
+    }
+  };
+
+  const handleAdminClick = () => {
+    if (user?.role !== 'admin') return;
+    onOpenAdmin();
   };
 
   // Handle auth form input changes
@@ -437,7 +462,7 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                 <span className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
                   NEWSINSIGHT
                 </span>
-                <div className="text-[10px] text-slate-500 dark:text-slate-400 -mt-1 tracking-[0.2em]">AI MARKET INTEL</div>
+                <div className="text-[10px] text-slate-500 dark:text-slate-400 -mt-1 tracking-[0.2em]">AI MARKET INTELLIGENCE</div>
               </div>
             </div>
 
@@ -468,6 +493,12 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                 LLM
               </button>
               <button
+                onClick={handlePortfolioClick}
+                className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-sm font-semibold transition-all"
+              >
+                Portfolio
+              </button>
+              <button
                 onClick={() => scrollToSection('services')}
                 className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-sm font-semibold transition-all"
               >
@@ -479,6 +510,14 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
               >
                 About
               </button>
+              {user?.role === 'admin' && (
+                <button
+                  onClick={handleAdminClick}
+                  className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-sm font-semibold transition-all"
+                >
+                  Admin
+                </button>
+              )}
             </div>
 
             {/* Auth Buttons */}
@@ -854,6 +893,10 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                             }
                             const min = Math.min(...prices);
                             const max = Math.max(...prices);
+                            const previousClose = getPreviousClose(analysisData);
+                            const previousCloseY = Number.isFinite(previousClose)
+                              ? 220 - ((previousClose - min) / (max - min || 1)) * 180
+                              : null;
                             const points = analysisData.history.map((point, index) => {
                               const value = point.close ?? min;
                               const x = (index / Math.max(analysisData.history.length - 1, 1)) * 600;
@@ -892,6 +935,19 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                                     strokeWidth="1"
                                   />
                                 ))}
+                                {Number.isFinite(previousCloseY) && (
+                                  <>
+                                    <line
+                                      x1="0"
+                                      x2="600"
+                                      y1={previousCloseY}
+                                      y2={previousCloseY}
+                                      stroke="#94A3B8"
+                                      strokeDasharray="4 6"
+                                      strokeWidth="1"
+                                    />
+                                  </>
+                                )}
                                 <rect
                                   x="0"
                                   y="0"
@@ -934,6 +990,11 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
                         </svg>
                       ) : (
                         <div className="h-full flex items-center justify-center text-gray-400">Chart data unavailable</div>
+                      )}
+                      {Number.isFinite(previousCloseValue) && (
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-gray-900/90 border border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-300 px-2 py-1 rounded-md shadow-sm">
+                          Prev close {previousCloseValue.toFixed(2)}
+                        </div>
                       )}
                       {analysisData.history?.length ? (
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex flex-col justify-between text-[11px] text-gray-500 dark:text-gray-400 py-3">
@@ -1762,8 +1823,8 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
 
       {/* Login/Signup Modal */}
       {showLoginModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-8 relative text-slate-900 dark:text-white">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-start justify-center p-4 sm:py-10 overflow-y-auto hide-scrollbar">
+          <div className="bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-8 relative text-slate-900 dark:text-white max-h-[90vh] overflow-y-auto hide-scrollbar">
             <button
               onClick={() => {
                 setShowLoginModal(false);
@@ -1899,15 +1960,18 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
             </div>
 
             {/* Google Sign In Button */}
-            <div className="flex justify-center">
-              <GoogleLogin
-                onSuccess={handleGoogleSuccess}
-                onError={handleGoogleError}
-                theme={isDark ? "filled_black" : "outline"}
-                size="large"
-                width="100%"
-                text={isSignup ? "signup_with" : "signin_with"}
-              />
+            <div className="flex justify-center w-full">
+              <div className="w-full max-w-sm">
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={handleGoogleError}
+                  theme={isDark ? "filled_black" : "outline"}
+                  size="large"
+                  width={360}
+                  text={isSignup ? "signup_with" : "signin_with"}
+                />
+              
+              </div>
             </div>
 
             <div className="mt-6 text-center">
@@ -1937,6 +2001,17 @@ export default function HomePage({ onGetStarted, onOpenHelp, onOpenFeedback, onO
         onClose={() => setShowSettings(false)} 
         onSettingsSaved={onSettingsChange} 
       />
+
+      <style jsx>{`
+        .hide-scrollbar {
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+          width: 0;
+          height: 0;
+        }
+      `}</style>
     </div>
   );
 }

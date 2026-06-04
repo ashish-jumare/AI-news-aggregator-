@@ -37,6 +37,14 @@ export const API_ENDPOINTS = {
   CHATS: `${API_BASE_URL}/api/chats`,
   CHAT_BY_ID: (chatId) => `${API_BASE_URL}/api/chats/${chatId}`,
   CHAT_PIN: (chatId) => `${API_BASE_URL}/api/chats/${chatId}/pin`,
+
+  // Portfolio endpoints
+  PORTFOLIO: `${API_BASE_URL}/api/portfolio`,
+
+  // Admin endpoints
+  ADMIN_OVERVIEW: `${API_BASE_URL}/api/admin/overview`,
+  ADMIN_FEEDBACK_STATUS: (id) => `${API_BASE_URL}/api/feedback/${id}/status`,
+  ADMIN_CONTACT_STATUS: (id) => `${API_BASE_URL}/api/contacts/${id}/status`,
 };
 
 export default API_BASE_URL;

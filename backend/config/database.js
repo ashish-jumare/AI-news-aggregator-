@@ -8,7 +8,7 @@ const connectDB = async () => {
     if (!mongoURI) {
       console.error('MONGODB_URI is not defined in .env file');
       console.log('Please add MONGODB_URI=your_connection_string to your .env file');
-      return;
+      process.exit(1);
     }
 
     await mongoose.connect(mongoURI);
@@ -19,7 +19,7 @@ const connectDB = async () => {
   } catch (error) {
     console.error(' MongoDB Connection Error:', error.message);
     console.log(' Make sure your MongoDB connection string is correct');
-    // Don't exit process, let the app run without MongoDB
+    process.exit(1);
   }
 };
 

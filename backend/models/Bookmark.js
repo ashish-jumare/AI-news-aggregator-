@@ -2,9 +2,9 @@ const mongoose = require('mongoose');
 
 const bookmarkSchema = new mongoose.Schema({
   userId: {
-    type: String,
-    required: true,
-    default: 'default_user' // For now, using single user. Can extend to multi-user later
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
   },
   company: {
     type: String,

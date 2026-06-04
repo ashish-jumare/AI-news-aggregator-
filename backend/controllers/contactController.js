@@ -1,4 +1,5 @@
 const Contact = require('../models/Contact');
+const { sendStatusUpdateEmail } = require('../utils/email');
 
 // Submit a new contact form
 exports.submitContact = async (req, res) => {
@@ -139,6 +140,18 @@ exports.updateContactStatus = async (req, res) => {
       message: 'Contact status updated successfully',
       contact
     });
+
+    try {
+      await sendStatusUpdateEmail({
+        to: contact.email,
+        title: 'contact request',
+        referenceId: contact._id.toString().slice(-8).toUpperCase(),
+        status,
+        summary: contact.subject ? `Subject: ${contact.subject}` : ''
+      });
+    } catch (emailError) {
+      console.error('❌ Failed to send contact status email:', emailError);
+    }
   } catch (error) {
     console.error('❌ Error updating contact status:', error);
     res.status(500).json({

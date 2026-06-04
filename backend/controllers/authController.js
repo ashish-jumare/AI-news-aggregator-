@@ -1,10 +1,21 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { OAuth2Client } = require('google-auth-library');
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Generate JWT token
+const getJwtSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET is not configured');
+  }
+  return secret;
+};
+
 const generateToken = (userId) => {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET || 'your-secret-key-change-in-production', {
+  return jwt.sign({ id: userId }, getJwtSecret(), {
     expiresIn: '7d'
   });
 };
@@ -147,45 +158,77 @@ exports.login = async (req, res) => {
 // Google OAuth login/signup
 exports.googleAuth = async (req, res) => {
   try {
-    const { credential, fullName, email, profilePicture } = req.body;
+    const { credential } = req.body;
 
-    if (!email) {
-      return res.status(400).json({
+    if (!process.env.GOOGLE_CLIENT_ID) {
+      return res.status(500).json({
         success: false,
-        message: 'Email is required'
+        message: 'Google login is not configured'
       });
     }
 
-    // Check if user exists
+    if (!credential) {
+      return res.status(400).json({
+        success: false,
+        message: 'Google credential is required'
+      });
+    }
+
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID
+    });
+
+    const payload = ticket.getPayload();
+    const email = payload?.email;
+    const emailVerified = payload?.email_verified;
+    const googleId = payload?.sub;
+    const fullName = payload?.name;
+    const profilePicture = payload?.picture;
+
+    if (!email || !emailVerified || !googleId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Google account is not verified'
+      });
+    }
+
     let user = await User.findOne({ email });
+    const isNewUser = !user;
 
     if (user) {
-      // Update last login
+      if (user.googleId && user.googleId !== googleId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Google account mismatch for this email'
+        });
+      }
+
+      user.googleId = user.googleId || googleId;
       user.lastLogin = new Date();
       if (profilePicture) user.profilePicture = profilePicture;
+      if (!user.isVerified) user.isVerified = true;
       await user.save();
-      
+
       console.log(` Google user logged in: ${email}`);
     } else {
-      // Create new user
       user = new User({
         fullName: fullName || email.split('@')[0],
         email,
-        googleId: credential,
+        googleId,
         profilePicture: profilePicture || '',
-        isVerified: true // Google users are pre-verified
+        isVerified: true
       });
 
       await user.save();
       console.log(` New Google user registered: ${email}`);
     }
 
-    // Generate token
     const token = generateToken(user._id);
 
     res.status(200).json({
       success: true,
-      message: user ? 'Login successful' : 'Account created successfully',
+      message: isNewUser ? 'Account created successfully' : 'Login successful',
       token,
       user: {
         id: user._id,

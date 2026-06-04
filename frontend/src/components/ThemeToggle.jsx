@@ -2,7 +2,6 @@ import { useTheme } from '../context/ThemeContext';
 import { useState } from 'react';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
-import * as XLSX from 'xlsx';
 import SettingsModal from './SettingsModal';
 
 export default function ThemeToggle({ newsData = [], selectedCompany, onOpenDashboard, onOpenNewsFeed, onOpenTwitterFeed, onOpenBookmarks, onOpenHelp, onOpenFeedback, onSettingsChange, onGoHome, currentView }) {
@@ -411,43 +410,17 @@ export default function ThemeToggle({ newsData = [], selectedCompany, onOpenDash
       const keyPoints = extractKeyPoints(article);
       
       return {
-        '#': index + 1,
-        'Title': article.title,
-        'Summary': summary,
-        'Key Points': keyPoints,
-        'Source': article.source?.name || article.source || 'Unknown',
-        'Published Date': publishedDate.toLocaleString('en-US'),
-        'Hours Ago': hours,
-        'Sentiment': article.sentiment || 'neutral',
-        'Article Link': article.url
+        index: index + 1,
+        title: article.title,
+        summary,
+        keyPoints,
+        source: article.source?.name || article.source || 'Unknown',
+        publishedDate: publishedDate.toLocaleString('en-US'),
+        hoursAgo: hours,
+        sentiment: article.sentiment || 'neutral',
+        articleLink: article.url
       };
     });
-
-    const worksheet = XLSX.utils.json_to_sheet(excelData);
-    
-    // Add hyperlinks to Article Link column (column I)
-    excelData.forEach((item, index) => {
-      const cellRef = XLSX.utils.encode_cell({ r: index + 1, c: 8 }); // Column I (9th column, 0-indexed)
-      if (worksheet[cellRef]) {
-        worksheet[cellRef].l = { Target: item['Article Link'], Tooltip: 'Click to read full article' };
-        worksheet[cellRef].v = 'Read Article';
-      }
-    });
-    
-    worksheet['!cols'] = [
-      { wch: 5 },
-      { wch: 50 },
-      { wch: 80 },
-      { wch: 30 },
-      { wch: 20 },
-      { wch: 20 },
-      { wch: 10 },
-      { wch: 12 },
-      { wch: 20 }
-    ];
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'News Summaries');
 
     const positive = last24HNews.filter(a => a.sentiment === 'positive').length;
     const negative = last24HNews.filter(a => a.sentiment === 'negative').length;
@@ -516,28 +489,53 @@ export default function ThemeToggle({ newsData = [], selectedCompany, onOpenDash
     
     summaryData.push({ Metric: 'Analysis', Value: execSummary });
     
-    const summarySheet = XLSX.utils.json_to_sheet(summaryData);
-    summarySheet['!cols'] = [{ wch: 30 }, { wch: 80 }];
-    XLSX.utils.book_append_sheet(workbook, summarySheet, 'Executive Summary');
-    
-    // Sentiment Analysis Sheet
-    const sentimentDetails = last24HNews.map((article, index) => ({
-      '#': index + 1,
-      'Title': article.title.substring(0, 60) + '...',
-      'Sentiment': article.sentiment || 'neutral',
-      'Source': article.source?.name || article.source || 'Unknown',
-      'Hours Ago': Math.floor((Date.now() - new Date(article.publishedAt)) / (1000 * 60 * 60))
-    }));
-    
-    const sentimentSheet = XLSX.utils.json_to_sheet(sentimentDetails);
-    sentimentSheet['!cols'] = [{ wch: 5 }, { wch: 60 }, { wch: 12 }, { wch: 25 }, { wch: 10 }];
-    XLSX.utils.book_append_sheet(workbook, sentimentSheet, 'Sentiment Analysis');
+    const headers = [
+      '#',
+      'Title',
+      'Summary',
+      'Key Points',
+      'Source',
+      'Published Date',
+      'Hours Ago',
+      'Sentiment',
+      'Article Link'
+    ];
 
-    const fileName = `${selectedCompany || 'news'}_summary_${Date.now()}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
+    const escapeCsv = (value) => {
+      if (value === null || value === undefined) return '';
+      const stringValue = String(value).replace(/\r?\n/g, ' ').trim();
+      return `"${stringValue.replace(/"/g, '""')}"`;
+    };
+
+    const rows = excelData.map((row) => [
+      row.index,
+      row.title,
+      row.summary,
+      row.keyPoints,
+      row.source,
+      row.publishedDate,
+      row.hoursAgo,
+      row.sentiment,
+      row.articleLink
+    ]);
+
+    const csvContent = [headers, ...rows]
+      .map((row) => row.map(escapeCsv).join(','))
+      .join('\n');
+
+    const fileName = `${selectedCompany || 'news'}_summary_${Date.now()}.csv`;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
     
-    console.log(`✅ Excel summary downloaded: ${fileName}`);
-    alert(`📊 Excel Summary Report Downloaded!\n\n✅ ${last24HNews.length} articles summarized\n📈 Executive summary included\n📊 3 detailed sheets generated`);
+    console.log(`✅ CSV summary downloaded: ${fileName}`);
+    alert(`📊 CSV Summary Report Downloaded!\n\n✅ ${last24HNews.length} articles summarized`);
     setShowReportMenu(false);
   };
 
@@ -735,7 +733,7 @@ export default function ThemeToggle({ newsData = [], selectedCompany, onOpenDash
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>
               <div>
-                <div> Download Excel </div>
+                <div> Download CSV </div>
                 <div className="text-xs text-gray-500">Spreadsheet with analysis</div>
               </div>
             </button>
@@ -828,6 +826,7 @@ export default function ThemeToggle({ newsData = [], selectedCompany, onOpenDash
                 </svg>
                 <span className="font-medium text-sm text-gray-800 dark:text-white">Bookmarks</span>
               </button>
+
             </div>
 
             {/* Footer */}

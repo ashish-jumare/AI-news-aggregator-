@@ -13,8 +13,16 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return res.status(500).json({
+        success: false,
+        message: 'JWT secret is not configured'
+      });
+    }
+
     // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-change-in-production');
+    const decoded = jwt.verify(token, jwtSecret);
     
     // Find user
     const user = await User.findById(decoded.id).select('-password');

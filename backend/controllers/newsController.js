@@ -19,7 +19,10 @@ const streamLiveNews = async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const allowedOrigin = process.env.FRONTEND_URL;
+  if (allowedOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+  }
 
   // Send initial connection message
   res.write(`data: ${JSON.stringify({ type: 'connected', message: 'Stream started' })}\n\n`);

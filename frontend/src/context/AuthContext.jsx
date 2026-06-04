@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
-import { jwtDecode } from 'jwt-decode';
 import { API_ENDPOINTS } from '../config/api';
 
 const AuthContext = createContext();

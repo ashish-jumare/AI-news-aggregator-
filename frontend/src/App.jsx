@@ -10,13 +10,17 @@ import FeedbackPage from './pages/FeedbackPage';
 import TwitterFeed from './components/TwitterFeed';
 import HomePage from './pages/HomePage';
 import LLMChatPage from './pages/LLMChatPage';
+import PortfolioPage from './pages/PortfolioPage';
+import AdminDashboardPage from './pages/AdminDashboardPage';
+import { useAuth } from './context/AuthContext';
 
 function App() {
+  const { user } = useAuth();
   const [showHomePage, setShowHomePage] = useState(true);
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [filterDays, setFilterDays] = useState(0); // 0 = All time, 30 = 1 month, 90 = 3 months, 180 = 6 months, 365 = 1 year
   const [currentNews, setCurrentNews] = useState([]);
-  const [currentView, setCurrentView] = useState('news'); // 'news', 'twitter', 'dashboard', 'newsfeed', 'bookmarks', 'help', 'feedback'
+  const [currentView, setCurrentView] = useState('news'); // 'news', 'twitter', 'dashboard', 'newsfeed', 'bookmarks', 'help', 'feedback', 'llm', 'portfolio', 'admin'
   const [settingsVersion, setSettingsVersion] = useState(0); // Track settings changes
   const [showTweetOptionModal, setShowTweetOptionModal] = useState(false);
   const [fetchTrigger, setFetchTrigger] = useState(0);
@@ -51,7 +55,7 @@ function App() {
 
   const handleCompanySelect = (company) => {
     setSelectedCompany(company);
-    if (currentView === 'twitter' || currentView === 'dashboard' || currentView === 'newsfeed' || currentView === 'bookmarks' || currentView === 'help' || currentView === 'feedback' || currentView === 'llm') {
+    if (currentView === 'twitter' || currentView === 'dashboard' || currentView === 'newsfeed' || currentView === 'bookmarks' || currentView === 'help' || currentView === 'feedback' || currentView === 'llm' || currentView === 'portfolio' || currentView === 'admin') {
       setCurrentView('news'); // Reset to news view when selecting new company
     }
   };
@@ -112,6 +116,14 @@ function App() {
           setShowHomePage(false);
           setCurrentView('llm');
         }}
+        onOpenPortfolio={() => {
+          setShowHomePage(false);
+          setCurrentView('portfolio');
+        }}
+        onOpenAdmin={() => {
+          setShowHomePage(false);
+          setCurrentView('admin');
+        }}
         onSettingsChange={handleSettingsChange}
       />
     );
@@ -145,6 +157,14 @@ function App() {
         />
       ) : currentView === 'llm' ? (
         <LLMChatPage
+          onClose={() => setShowHomePage(true)}
+        />
+      ) : currentView === 'portfolio' ? (
+        <PortfolioPage
+          onClose={() => setShowHomePage(true)}
+        />
+      ) : currentView === 'admin' ? (
+        <AdminDashboardPage
           onClose={() => setShowHomePage(true)}
         />
       ) : (

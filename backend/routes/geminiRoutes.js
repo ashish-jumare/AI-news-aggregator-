@@ -1,13 +1,48 @@
 const express = require('express');
 const router = express.Router();
+const authMiddleware = require('../middleware/authMiddleware');
 const { generateResponse, generateStreamingResponse } = require('../services/geminiService');
+const validate = require('../middleware/validate');
+const { z } = require('zod');
+
+const geminiSchema = z.object({
+  body: z.object({
+    messages: z
+      .array(
+        z.object({
+          role: z.enum(['user', 'assistant']),
+          content: z.string().min(1),
+          images: z
+            .array(
+              z.object({
+                name: z.string().optional(),
+                type: z.string().optional(),
+                data: z.string().optional()
+              })
+            )
+            .optional()
+        })
+      )
+      .min(1)
+  }),
+  params: z.object({}).optional().default({}),
+  query: z.object({}).optional().default({})
+});
 
 /**
  * POST /api/gemini/chat
  * Generate a response from Gemini AI
  * Body: { messages: [{ role: 'user'|'assistant', content: string }] }
  */
-router.post('/chat', async (req, res) => {
+router.post('/chat', validate(geminiSchema), async (req, res) => {
+  if (!req.header('Authorization')) {
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication required'
+    });
+  }
+
+  return authMiddleware(req, res, async () => {
   try {
     const { messages } = req.body;
 
@@ -49,6 +84,7 @@ router.post('/chat', async (req, res) => {
       error: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
+  });
 });
 
 /**
@@ -56,7 +92,15 @@ router.post('/chat', async (req, res) => {
  * Generate a streaming response from Gemini AI
  * Body: { messages: [{ role: 'user'|'assistant', content: string }] }
  */
-router.post('/chat/stream', async (req, res) => {
+router.post('/chat/stream', validate(geminiSchema), async (req, res) => {
+  if (!req.header('Authorization')) {
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication required'
+    });
+  }
+
+  return authMiddleware(req, res, async () => {
   try {
     const { messages } = req.body;
 
@@ -90,6 +134,7 @@ router.post('/chat/stream', async (req, res) => {
     })}\n\n`);
     res.end();
   }
+  });
 });
 
 /**

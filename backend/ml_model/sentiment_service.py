@@ -17,9 +17,14 @@ app = FastAPI(
 )
 
 # Enable CORS
+allowed_origins_env = os.getenv("ANALYSIS_ALLOWED_ORIGINS") or os.getenv("FRONTEND_URL") or ""
+allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+if not allowed_origins:
+    allowed_origins = ["http://localhost:3000"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -342,6 +347,65 @@ def compute_macd(values: List[float]) -> Optional[dict]:
         'histogram': histogram
     }
 
+def safe_float(value) -> Optional[float]:
+    try:
+        if value is None:
+            return None
+        if value != value:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+def compute_ohlc_from_history(history_df) -> dict:
+    if history_df is None or history_df.empty:
+        return {
+            'open': None,
+            'high': None,
+            'low': None,
+            'close': None,
+            'volume': None
+        }
+
+    open_series = history_df['Open'].dropna()
+    high_series = history_df['High'].dropna()
+    low_series = history_df['Low'].dropna()
+    close_series = history_df['Close'].dropna()
+    volume_series = history_df['Volume'].dropna()
+
+    return {
+        'open': safe_float(open_series.iloc[0]) if len(open_series) else None,
+        'high': safe_float(high_series.max()) if len(high_series) else None,
+        'low': safe_float(low_series.min()) if len(low_series) else None,
+        'close': safe_float(close_series.iloc[-1]) if len(close_series) else None,
+        'volume': safe_float(volume_series.sum()) if len(volume_series) else None
+    }
+
+def compute_volume_stats(daily_df, window: int = 20) -> dict:
+    if daily_df is None or daily_df.empty:
+        return {'volume': None, 'avgVolume': None}
+
+    volume_series = daily_df['Volume'].dropna()
+    latest_volume = safe_float(volume_series.iloc[-1]) if len(volume_series) else None
+    avg_volume = safe_float(volume_series.tail(window).mean()) if len(volume_series) else None
+
+    return {'volume': latest_volume, 'avgVolume': avg_volume}
+
+def choose_market_cap(reported_cap: Optional[float], calculated_cap: Optional[float]) -> Optional[float]:
+    if calculated_cap is None:
+        return reported_cap
+    if reported_cap is None:
+        return calculated_cap
+
+    if calculated_cap == 0:
+        return reported_cap
+
+    ratio = reported_cap / calculated_cap
+    if ratio < 0.2 or ratio > 5:
+        return calculated_cap
+
+    return reported_cap
+
 @app.get("/", response_model=dict)
 async def root():
     """Root endpoint"""
@@ -509,6 +573,9 @@ async def get_company_analysis(name: str, symbol: Optional[str] = None, range: s
                 auto_adjust=False
             )
 
+        daily_df = ticker.history(period="1mo", interval="1d", auto_adjust=False)
+        year_df = ticker.history(period="1y", interval="1d", auto_adjust=False)
+
         latest_row = None
         prev_row = None
         if history_df is not None and not history_df.empty:
@@ -516,13 +583,16 @@ async def get_company_analysis(name: str, symbol: Optional[str] = None, range: s
             if len(history_df) > 1:
                 prev_row = history_df.iloc[-2]
 
-        ohlc = {
-            'open': float(latest_row['Open']) if latest_row is not None else None,
-            'high': float(latest_row['High']) if latest_row is not None else None,
-            'low': float(latest_row['Low']) if latest_row is not None else None,
-            'close': float(latest_row['Close']) if latest_row is not None else None,
-            'volume': float(latest_row['Volume']) if latest_row is not None else None
-        }
+        if range_key == "1d":
+            ohlc = compute_ohlc_from_history(history_df)
+        else:
+            ohlc = {
+                'open': safe_float(latest_row['Open']) if latest_row is not None else None,
+                'high': safe_float(latest_row['High']) if latest_row is not None else None,
+                'low': safe_float(latest_row['Low']) if latest_row is not None else None,
+                'close': safe_float(latest_row['Close']) if latest_row is not None else None,
+                'volume': safe_float(latest_row['Volume']) if latest_row is not None else None
+            }
 
         fast_price = fast_info.get('last_price') or fast_info.get('lastPrice')
         fast_prev_close = fast_info.get('previous_close') or fast_info.get('previousClose')
@@ -544,14 +614,27 @@ async def get_company_analysis(name: str, symbol: Optional[str] = None, range: s
             change = price - prev_close
             change_percent = (change / prev_close) * 100
 
+        volume_stats = compute_volume_stats(daily_df, 20)
+        year_high = None
+        year_low = None
+        if year_df is not None and not year_df.empty:
+            year_high = safe_float(year_df['High'].dropna().max())
+            year_low = safe_float(year_df['Low'].dropna().min())
+
+        reported_market_cap = safe_float(info.get('marketCap'))
+        shares_outstanding = safe_float(info.get('sharesOutstanding') or fast_info.get('shares'))
+        calculated_market_cap = None
+        if price is not None and shares_outstanding is not None:
+            calculated_market_cap = price * shares_outstanding
+
         fundamentals = {
-            'marketCap': info.get('marketCap'),
+            'marketCap': choose_market_cap(reported_market_cap, calculated_market_cap),
             'peRatio': info.get('trailingPE'),
             'eps': info.get('trailingEps'),
             'dividendYield': info.get('dividendYield'),
             'beta': info.get('beta'),
-            'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh'),
-            'fiftyTwoWeekLow': info.get('fiftyTwoWeekLow')
+            'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh') or year_high,
+            'fiftyTwoWeekLow': info.get('fiftyTwoWeekLow') or year_low
         }
 
         indicators = None
@@ -577,8 +660,8 @@ async def get_company_analysis(name: str, symbol: Optional[str] = None, range: s
             'changePercent': change_percent if change_percent is not None else info.get('regularMarketChangePercent'),
             'range': range_key,
             'ohlc': ohlc,
-            'volume': info.get('regularMarketVolume') or ohlc['volume'],
-            'avgVolume': info.get('averageVolume'),
+            'volume': volume_stats['volume'] or info.get('regularMarketVolume') or ohlc['volume'],
+            'avgVolume': volume_stats['avgVolume'] or info.get('averageVolume'),
             'fundamentals': fundamentals,
             'history': serialize_history(history_df),
             'indicators': indicators

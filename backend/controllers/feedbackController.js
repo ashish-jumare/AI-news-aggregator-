@@ -1,4 +1,5 @@
 const Feedback = require('../models/Feedback');
+const { sendStatusUpdateEmail } = require('../utils/email');
 
 // Generate unique ticket number
 const generateTicketNumber = () => {
@@ -180,6 +181,18 @@ exports.updateFeedbackStatus = async (req, res) => {
       message: 'Feedback status updated successfully',
       feedback
     });
+
+    try {
+      await sendStatusUpdateEmail({
+        to: feedback.email,
+        title: 'feedback ticket',
+        referenceId: feedback.ticketNumber,
+        status,
+        summary: feedback.subject ? `Subject: ${feedback.subject}` : ''
+      });
+    } catch (emailError) {
+      console.error('❌ Failed to send feedback status email:', emailError);
+    }
   } catch (error) {
     console.error('❌ Error updating feedback status:', error);
     res.status(500).json({

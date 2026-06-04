@@ -3,7 +3,7 @@ const Bookmark = require('../models/Bookmark');
 // Get all bookmarks for a user
 exports.getBookmarks = async (req, res) => {
   try {
-    const userId = req.query.userId || 'default_user';
+    const userId = req.user.id;
     const bookmarks = await Bookmark.find({ userId })
       .sort({ bookmarkedAt: -1 }) // Latest first
       .lean(); // Return plain JavaScript objects
@@ -26,7 +26,7 @@ exports.getBookmarks = async (req, res) => {
 // Add a new bookmark
 exports.addBookmark = async (req, res) => {
   try {
-    const userId = req.body.userId || 'default_user';
+    const userId = req.user.id;
     const bookmarkData = {
       userId,
       company: req.body.company,
@@ -68,7 +68,7 @@ exports.addBookmark = async (req, res) => {
 // Remove a bookmark
 exports.removeBookmark = async (req, res) => {
   try {
-    const userId = req.query.userId || 'default_user';
+    const userId = req.user.id;
     const { url } = req.params;
 
     const result = await Bookmark.findOneAndDelete({ 
@@ -100,7 +100,7 @@ exports.removeBookmark = async (req, res) => {
 // Check if an article is bookmarked
 exports.checkBookmark = async (req, res) => {
   try {
-    const userId = req.query.userId || 'default_user';
+    const userId = req.user.id;
     const { url } = req.params;
 
     const bookmark = await Bookmark.findOne({ 
@@ -125,7 +125,7 @@ exports.checkBookmark = async (req, res) => {
 // Get bookmarks by company
 exports.getBookmarksByCompany = async (req, res) => {
   try {
-    const userId = req.query.userId || 'default_user';
+    const userId = req.user.id;
     const { company } = req.params;
 
     const bookmarks = await Bookmark.find({ 
@@ -154,7 +154,7 @@ exports.getBookmarksByCompany = async (req, res) => {
 // Clear all bookmarks (optional - for testing)
 exports.clearAllBookmarks = async (req, res) => {
   try {
-    const userId = req.query.userId || 'default_user';
+    const userId = req.user.id;
     const result = await Bookmark.deleteMany({ userId });
 
     res.json({
