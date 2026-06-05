@@ -1,4 +1,5 @@
 # AI Financial Intelligence Platform
+# INSIGHTNEWS
 
 ## Overview
 AI Financial Intelligence Platform is a full-stack application that combines real-time news aggregation, financial sentiment analysis, portfolio management, social media intelligence, and a multimodal AI assistant.
