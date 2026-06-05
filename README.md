@@ -1,131 +1,198 @@
-# Live Company News Web App
+# AI Financial Intelligence Platform
 
-A full-stack real-time news streaming application that fetches and displays live company news with Server-Sent Events (SSE).
+## Overview
+AI Financial Intelligence Platform is a full-stack application that combines real-time news aggregation, financial sentiment analysis, portfolio management, social media intelligence, and a multimodal AI assistant.
 
-## 🚀 Features
-
-- **Real-time News Updates**: SSE streaming with 60-second auto-refresh
-- **7 Major Companies**: Tata, Apple, Google, Amazon, Tesla, Microsoft, Nvidia
-- **90-Day Historical Filter**: Optional checkbox to show news from last 90 days
-- **Sentiment Analysis**: Positive/Neutral/Negative tagging
-- **Professional Reports**: Download PDF and Excel summaries with smart analysis
-- **Tri-Source News System**: 
-  - Primary: Google News RSS (real-time, unlimited)
-  - Secondary: NewsData.io (90-day history, 200 req/day)
-  - Fallback: NewsAPI.org (30-day backup, 100 req/day)
-- **Modern UI**: React + TailwindCSS with dark mode support
+## Core Features
+- Real-time company news aggregation
+- FinBERT financial sentiment analysis
+- Google Gemini AI assistant
+- Portfolio management and transaction tracking
+- Social media intelligence and sentiment monitoring
+- Persistent AI chat history
+- Bookmarks and personalized dashboard
+- Google OAuth and JWT authentication
+- Voice-enabled AI chat
+- Admin dashboard
+- Feedback and contact management
 
 ---
 
-## 📁 Project Structure
+# System Architecture
 
+```text
+Frontend (React + Vite + TailwindCSS)
+                |
+             REST APIs
+                |
+Backend (Node.js + Express.js)
+                |
+ ------------------------------------------------
+ |            |            |          |          |
+News       Gemini AI   Portfolio   Social     Auth
+Engine                   Engine    Engine    System
+                |
+             MongoDB
+                |
+      ---------------------
+      |                   |
+  FinBERT           Gemini API
+ (Python ML)
 ```
-Major Project/
-├── backend/
-│   ├── controllers/
-│   │   └── newsController.js      # SSE streaming logic
-│   ├── routes/
-│   │   └── news.js                # API routes
+
+---
+
+# Technology Stack
+
+## Frontend
+- React
+- Vite
+- Tailwind CSS
+- Axios
+- React Router
+
+## Backend
+- Node.js
+- Express.js
+- MongoDB
+- Mongoose
+- JWT
+- Zod
+- Helmet
+- Express Rate Limit
+- CORS
+
+## AI & ML
+- Google Gemini
+- FinBERT
+- Transformers
+- Python
+
+---
+
+# Major Modules
+
+## News Intelligence Engine
+- Google News RSS aggregation
+- Historical news support
+- Article filtering
+- Deduplication
+- Real-time updates
+
+## Sentiment Analysis Engine
+- FinBERT-powered sentiment classification
+- Positive / Neutral / Negative tagging
+- Finance-specific NLP
+
+## AI Assistant
+- News summarization
+- Financial Q&A
+- Company analysis
+- Image + text support
+- Persistent chat history
+
+## Portfolio Management
+- Holdings tracking
+- Cash balance management
+- Transaction history
+- Portfolio monitoring
+
+## Social Intelligence
+- Social media monitoring
+- Sentiment extraction
+- Trend analysis
+
+---
+
+# Backend Structure
+
+```text
+backend/
+├── config/
+├── controllers/
+├── middleware/
+├── models/
+├── routes/
+├── services/
+├── ml_model/
+├── tests/
+└── server.js
+```
+
+# Frontend Structure
+
+```text
+frontend/
+├── src/
+│   ├── components/
+│   ├── pages/
 │   ├── services/
-│   │   └── newsService.js         # News API & scraper
-│   ├── utils/
-│   │   ├── dateFilter.js          # 7-day filter
-│   │   └── sentiment.js           # Sentiment analysis
-│   ├── .env                       # Environment variables
-│   ├── .gitignore
-│   ├── package.json
-│   └── server.js                  # Express server
-│
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Sidebar.jsx        # Company list + filter
-│   │   │   ├── LiveFeed.jsx       # News stream display
-│   │   │   └── NewsCard.jsx       # Individual news article
-│   │   ├── App.jsx                # Main app component
-│   │   ├── main.jsx               # Entry point
-│   │   └── index.css              # Tailwind styles
-│   ├── index.html
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── tailwind.config.js
-│   └── postcss.config.js
-│
-└── README.md
+│   ├── context/
+│   └── config/
 ```
 
 ---
 
-## 🎯 How to Use
+# API Modules
 
-1. **Setup API Keys**: 
-   - NewsAPI: Already configured ✅
-   - NewsData.io: Sign up at https://newsdata.io/register and add key to `.env` (see API_KEY_LOCATION.txt)
-2. **Start Backend**: Run `npm run dev` in `/backend`
-3. **Start Frontend**: Run `npm run dev` in `/frontend`
-4. **Open Browser**: Navigate to `http://localhost:3000`
-5. **Select Company**: Click any company from sidebar
-6. **View Live News**: News auto-updates every 60 seconds
-7. **Enable 90-Day Filter**: Check "Show news from last 90 days" for historical data
-8. **Download Reports**: Click report button to generate PDF or Excel summaries
-
----
-
-
-## 📊 Data Flow
-
-```
-User selects company + enables 90-day filter
-       ↓
-Frontend opens SSE connection to backend
-       ↓
-Backend receives request with filterDays=90
-       ↓
-┌──────────────────────────────────────┐
-│ SOURCE 1: Google News RSS            │
-│ ✅ Fetches real-time articles (0-7d) │
-└──────────────────────────────────────┘
-       ↓
-┌──────────────────────────────────────┐
-│ SOURCE 2: NewsData.io                │
-│ ✅ Fetches historical (8-90 days)    │
-│ ✅ Merges with RSS, removes dupes    │
-└──────────────────────────────────────┘
-       ↓
-┌──────────────────────────────────────┐
-│ SOURCE 3: NewsAPI (if needed)        │
-│ ⚠️ Backup fallback only              │
-└──────────────────────────────────────┘
-       ↓
-Apply sentiment analysis to all articles
-       ↓
-Sort by date (oldest → newest when filtered)
-       ↓
-Stream to frontend via SSE
-       ↓
-Auto-refresh every 60 seconds
-```
+- /api/auth
+- /api/news
+- /api/bookmarks
+- /api/twitter
+- /api/chats
+- /api/gemini
+- /api/portfolio
+- /api/contacts
+- /api/feedback
+- /api/admin
 
 ---
 
-## 🎨 UI Components
+# Security Features
 
-### Sidebar
-- Company list with icons
-- 7-day filter toggle
-- Active company highlighting
-
-### LiveFeed
-- Real-time news stream
-- Loading states
-- Error handling
-- Last update timestamp
-
-### NewsCard
-- Article title & description
-- Sentiment badge with emoji
-- Source & publish time
-- Image (if available)
-- "Read more" link
+- JWT Authentication
+- Google OAuth
+- Request Validation
+- Helmet Security Headers
+- Rate Limiting
+- Protected Routes
+- Environment Variable Protection
 
 ---
+
+# Scalability
+
+Current architecture can comfortably support:
+- 100–300 active users
+
+Future improvements:
+- Redis caching
+- Background workers
+- Queue system
+- Subscription management
+- Real-time stock market integration
+
+---
+
+# Academic Contribution
+
+This project demonstrates the integration of:
+
+- Financial NLP
+- Sentiment Analysis
+- Large Language Models
+- Portfolio Management
+- Social Intelligence
+- Full-Stack Development
+
+into a unified AI-powered financial intelligence platform.
+
+---
+
+# Author
+
+Ashish Jumare
+
+Bachelor of Technology (Information Technology)
+
+
