@@ -140,7 +140,7 @@ export default function Sidebar({ selectedCompany, onSelectCompany, filterDays, 
     <aside className="w-64 bg-white dark:bg-gray-800 shadow-lg border-r border-gray-200 dark:border-gray-700 transition-colors duration-300 flex flex-col h-full">
       <div className="flex-shrink-0 p-5 pb-3">
         <h1 className="text-xl font-bold text-gray-800 dark:text-white mb-2">
-            Insight News
+            NEWSINSIGHT
         </h1>
         <p className="text-xs text-gray-600 dark:text-gray-400 mb-5">
           Real-time NIFTY 100 company updates

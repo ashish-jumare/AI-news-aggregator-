@@ -374,7 +374,7 @@ export default function ThemeToggle({ newsData = [], selectedCompany, onOpenDash
       doc.setFontSize(8);
       doc.setTextColor(150);
       const footerText = sanitizeTextForPDF(
-        'Page ' + i + ' of ' + pageCount + ' | Insight News Report | ' + (selectedCompany || 'Company') + ' | ' + new Date().toLocaleDateString()
+        'Page ' + i + ' of ' + pageCount + ' | NewsInsight Report | ' + (selectedCompany || 'Company') + ' | ' + new Date().toLocaleDateString()
       );
       doc.text(
         footerText,
@@ -832,7 +832,7 @@ export default function ThemeToggle({ newsData = [], selectedCompany, onOpenDash
             {/* Footer */}
             <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-gray-200 dark:border-gray-700">
               <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
-                Insight News © 2025
+                NEWSINSIGHT © 2025
               </div>
             </div>
           </div>
