@@ -682,4 +682,5 @@ if __name__ == "__main__":
     print(" Batch: POST http://localhost:5001/analyze-batch")
     print("="*60 + "\n")
     
-    uvicorn.run(app, host="0.0.0.0", port=5001, log_level="info")
+    port = int(os.environ.get("PORT", 5001))
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

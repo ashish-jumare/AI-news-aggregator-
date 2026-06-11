@@ -48,8 +48,6 @@ backend/ml_model/finbert_model/
 **/finbert_model/
 
 # Large packages
-package-lock.json
-**/package-lock.json
 
 # Database
 *.db
