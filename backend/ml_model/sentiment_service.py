@@ -424,6 +424,12 @@ async def health_check():
         "ml_model_loaded": model_loaded
     }
 
+@app.head("/health")
+async def health_check_head():
+    from fastapi.responses import Response
+    return Response(status_code=200)
+
+
 @app.post("/analyze", response_model=SentimentResponse)
 async def analyze_sentiment(request: SentimentRequest):
     """
