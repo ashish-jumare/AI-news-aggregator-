@@ -6,17 +6,21 @@ import { useAuth } from '../context/AuthContext';
 export default function AdminDashboardPage({ onClose }) {
   const { user } = useAuth();
   const [overview, setOverview] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [feedbacks, setFeedbacks] = useState([]);
+  const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [updating, setUpdating] = useState({});
   const [toast, setToast] = useState(null);
+  const [userSearch, setUserSearch] = useState('');
   const [feedbackSearch, setFeedbackSearch] = useState('');
   const [feedbackStatusFilter, setFeedbackStatusFilter] = useState('all');
   const [contactSearch, setContactSearch] = useState('');
   const [contactStatusFilter, setContactStatusFilter] = useState('all');
 
   useEffect(() => {
-    const loadOverview = async () => {
+    const loadAdminData = async () => {
       const token = localStorage.getItem('token');
       if (!token) {
         setError('Please log in to view the admin dashboard.');
@@ -25,27 +29,35 @@ export default function AdminDashboardPage({ onClose }) {
       }
 
       try {
-        const response = await axios.get(API_ENDPOINTS.ADMIN_OVERVIEW, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (response.data?.success) {
-          setOverview(response.data);
-        } else {
+        const headers = { Authorization: `Bearer ${token}` };
+        const [overviewRes, usersRes, feedbackRes, contactRes] = await Promise.all([
+          axios.get(API_ENDPOINTS.ADMIN_OVERVIEW, { headers }),
+          axios.get(API_ENDPOINTS.ADMIN_USERS, { headers }),
+          axios.get(`${API_ENDPOINTS.FEEDBACK}?limit=500&skip=0`, { headers }),
+          axios.get(`${API_ENDPOINTS.CONTACTS}?limit=500&skip=0`, { headers })
+        ]);
+
+        if (!overviewRes.data?.success) {
           setError('Unable to load admin overview.');
+          return;
         }
+
+        setOverview(overviewRes.data);
+        setUsers(usersRes.data?.users || []);
+        setFeedbacks(feedbackRes.data?.feedbacks || []);
+        setContacts(contactRes.data?.contacts || []);
       } catch (err) {
-        const message = err.response?.data?.message || 'Unable to load admin overview.';
+        const message = err.response?.data?.message || 'Unable to load admin data.';
         setError(message);
       } finally {
         setLoading(false);
       }
     };
 
-    loadOverview();
+    loadAdminData();
   }, []);
 
   const stats = overview?.stats;
-  const recent = overview?.recent;
   const isAdmin = user?.role === 'admin';
 
   const showToast = (message, tone = 'success') => {
@@ -61,26 +73,22 @@ export default function AdminDashboardPage({ onClose }) {
 
     setUpdating((prev) => ({ ...prev, [id]: true }));
     try {
-      await axios.patch(
+      const response = await axios.patch(
         API_ENDPOINTS.ADMIN_FEEDBACK_STATUS(id),
         { status },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      setOverview((prev) => {
-        if (!prev?.recent?.feedbacks) return prev;
-        const nextFeedbacks = prev.recent.feedbacks.map((item) =>
-          item._id === id ? { ...item, status } : item
-        );
-        return {
-          ...prev,
-          recent: {
-            ...prev.recent,
-            feedbacks: nextFeedbacks
-          }
-        };
-      });
-      showToast('Feedback status updated');
+      setFeedbacks((prev) => prev.map((item) => (item._id === id ? { ...item, status } : item)));
+
+      const emailStatus = response.data?.emailNotification?.status;
+      if (emailStatus === 'sent') {
+        showToast('Feedback status updated and email sent');
+      } else if (emailStatus === 'failed') {
+        showToast('Feedback updated, but email failed', 'error');
+      } else {
+        showToast('Feedback status updated (email skipped)');
+      }
     } catch (err) {
       const message = err.response?.data?.message || 'Unable to update feedback status.';
       setError(message);
@@ -96,26 +104,22 @@ export default function AdminDashboardPage({ onClose }) {
 
     setUpdating((prev) => ({ ...prev, [id]: true }));
     try {
-      await axios.patch(
+      const response = await axios.patch(
         API_ENDPOINTS.ADMIN_CONTACT_STATUS(id),
         { status },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      setOverview((prev) => {
-        if (!prev?.recent?.contacts) return prev;
-        const nextContacts = prev.recent.contacts.map((item) =>
-          item._id === id ? { ...item, status } : item
-        );
-        return {
-          ...prev,
-          recent: {
-            ...prev.recent,
-            contacts: nextContacts
-          }
-        };
-      });
-      showToast('Contact status updated');
+      setContacts((prev) => prev.map((item) => (item._id === id ? { ...item, status } : item)));
+
+      const emailStatus = response.data?.emailNotification?.status;
+      if (emailStatus === 'sent') {
+        showToast('Contact status updated and email sent');
+      } else if (emailStatus === 'failed') {
+        showToast('Contact updated, but email failed', 'error');
+      } else {
+        showToast('Contact status updated (email skipped)');
+      }
     } catch (err) {
       const message = err.response?.data?.message || 'Unable to update contact status.';
       setError(message);
@@ -125,7 +129,91 @@ export default function AdminDashboardPage({ onClose }) {
     }
   };
 
-  const filteredFeedbacks = (recent?.feedbacks || []).filter((item) => {
+  const removeFeedback = async (id) => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    if (!window.confirm('Remove this feedback?')) return;
+
+    setUpdating((prev) => ({ ...prev, [id]: true }));
+    try {
+      await axios.delete(API_ENDPOINTS.ADMIN_DELETE_FEEDBACK(id), {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setFeedbacks((prev) => prev.filter((item) => item._id !== id));
+      setOverview((prev) => ({
+        ...prev,
+        stats: {
+          ...prev.stats,
+          feedbacks: Math.max(0, (prev.stats?.feedbacks || 0) - 1)
+        }
+      }));
+      showToast('Feedback removed');
+    } catch (err) {
+      const message = err.response?.data?.message || 'Unable to remove feedback.';
+      setError(message);
+      showToast(message, 'error');
+    } finally {
+      setUpdating((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const removeContact = async (id) => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    if (!window.confirm('Remove this contact?')) return;
+
+    setUpdating((prev) => ({ ...prev, [id]: true }));
+    try {
+      await axios.delete(API_ENDPOINTS.ADMIN_DELETE_CONTACT(id), {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setContacts((prev) => prev.filter((item) => item._id !== id));
+      setOverview((prev) => ({
+        ...prev,
+        stats: {
+          ...prev.stats,
+          contacts: Math.max(0, (prev.stats?.contacts || 0) - 1)
+        }
+      }));
+      showToast('Contact removed');
+    } catch (err) {
+      const message = err.response?.data?.message || 'Unable to remove contact.';
+      setError(message);
+      showToast(message, 'error');
+    } finally {
+      setUpdating((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const removeUser = async (id) => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    if (!window.confirm('Remove this user account?')) return;
+
+    setUpdating((prev) => ({ ...prev, [id]: true }));
+    try {
+      await axios.delete(API_ENDPOINTS.ADMIN_DELETE_USER(id), {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setUsers((prev) => prev.filter((item) => item._id !== id));
+      setOverview((prev) => ({
+        ...prev,
+        stats: {
+          ...prev.stats,
+          users: Math.max(0, (prev.stats?.users || 0) - 1)
+        }
+      }));
+      showToast('User removed');
+    } catch (err) {
+      const message = err.response?.data?.message || 'Unable to remove user.';
+      setError(message);
+      showToast(message, 'error');
+    } finally {
+      setUpdating((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const filteredFeedbacks = (feedbacks || []).filter((item) => {
     const matchesStatus = feedbackStatusFilter === 'all' || item.status === feedbackStatusFilter;
     const query = feedbackSearch.trim().toLowerCase();
     if (!query) return matchesStatus;
@@ -133,12 +221,19 @@ export default function AdminDashboardPage({ onClose }) {
     return matchesStatus && haystack.includes(query);
   });
 
-  const filteredContacts = (recent?.contacts || []).filter((item) => {
+  const filteredContacts = (contacts || []).filter((item) => {
     const matchesStatus = contactStatusFilter === 'all' || item.status === contactStatusFilter;
     const query = contactSearch.trim().toLowerCase();
     if (!query) return matchesStatus;
     const haystack = `${item.fullName} ${item.email} ${item.subject}`.toLowerCase();
     return matchesStatus && haystack.includes(query);
+  });
+
+  const filteredUsers = (users || []).filter((item) => {
+    const query = userSearch.trim().toLowerCase();
+    if (!query) return true;
+    const haystack = `${item.fullName} ${item.email} ${item.role}`.toLowerCase();
+    return haystack.includes(query);
   });
 
   return (
@@ -207,7 +302,7 @@ export default function AdminDashboardPage({ onClose }) {
               <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Recent Feedback</h3>
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">All Feedback</h3>
                     <span className="text-xs text-gray-500 dark:text-gray-400">{filteredFeedbacks.length} items</span>
                   </div>
                   <div className="flex flex-wrap gap-2 mb-3">
@@ -231,7 +326,10 @@ export default function AdminDashboardPage({ onClose }) {
                       <option value="closed">Closed</option>
                     </select>
                   </div>
-                  <div className="space-y-3 text-sm">
+                  <div
+                    className="space-y-3 text-sm max-h-[26rem] overflow-y-auto pr-1"
+                    style={{ scrollbarWidth: 'thin' }}
+                  >
                     {filteredFeedbacks.length ? (
                       filteredFeedbacks.map((item) => (
                         <div key={item._id} className="border-b border-gray-100 dark:border-gray-700 pb-3">
@@ -250,6 +348,16 @@ export default function AdminDashboardPage({ onClose }) {
                               <option value="resolved">Resolved</option>
                               <option value="closed">Closed</option>
                             </select>
+                            <button
+                              type="button"
+                              onClick={() => removeFeedback(item._id)}
+                              disabled={Boolean(updating[item._id])}
+                              className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-gray-200 dark:border-gray-700 text-gray-400 hover:text-red-500 hover:border-red-300"
+                              title="Remove feedback"
+                              aria-label="Remove feedback"
+                            >
+                              ×
+                            </button>
                             {updating[item._id] && (
                               <span className="text-xs text-gray-500 dark:text-gray-400">Updating...</span>
                             )}
@@ -264,7 +372,7 @@ export default function AdminDashboardPage({ onClose }) {
 
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Recent Contacts</h3>
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">All Contacts</h3>
                     <span className="text-xs text-gray-500 dark:text-gray-400">{filteredContacts.length} items</span>
                   </div>
                   <div className="flex flex-wrap gap-2 mb-3">
@@ -287,7 +395,10 @@ export default function AdminDashboardPage({ onClose }) {
                       <option value="closed">Closed</option>
                     </select>
                   </div>
-                  <div className="space-y-3 text-sm">
+                  <div
+                    className="space-y-3 text-sm max-h-[26rem] overflow-y-auto pr-1"
+                    style={{ scrollbarWidth: 'thin' }}
+                  >
                     {filteredContacts.length ? (
                       filteredContacts.map((item) => (
                         <div key={item._id} className="border-b border-gray-100 dark:border-gray-700 pb-3">
@@ -306,6 +417,16 @@ export default function AdminDashboardPage({ onClose }) {
                               <option value="responded">Responded</option>
                               <option value="closed">Closed</option>
                             </select>
+                            <button
+                              type="button"
+                              onClick={() => removeContact(item._id)}
+                              disabled={Boolean(updating[item._id])}
+                              className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-gray-200 dark:border-gray-700 text-gray-400 hover:text-red-500 hover:border-red-300"
+                              title="Remove contact"
+                              aria-label="Remove contact"
+                            >
+                              ×
+                            </button>
                             {updating[item._id] && (
                               <span className="text-xs text-gray-500 dark:text-gray-400">Updating...</span>
                             )}
@@ -319,13 +440,43 @@ export default function AdminDashboardPage({ onClose }) {
                 </div>
 
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">Recent Users</h3>
-                  <div className="space-y-3 text-sm">
-                    {recent?.users?.length ? (
-                      recent.users.map((item) => (
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">All Users</h3>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{filteredUsers.length} items</span>
+                  </div>
+                  <div className="mb-3">
+                    <input
+                      type="text"
+                      value={userSearch}
+                      onChange={(event) => setUserSearch(event.target.value)}
+                      placeholder="Search users"
+                      className="w-full text-xs border border-gray-200 dark:border-gray-700 rounded-md px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
+                    />
+                  </div>
+                  <div
+                    className="space-y-3 text-sm max-h-[26rem] overflow-y-auto pr-1"
+                    style={{ scrollbarWidth: 'thin' }}
+                  >
+                    {filteredUsers.length ? (
+                      filteredUsers.map((item) => (
                         <div key={item._id} className="border-b border-gray-100 dark:border-gray-700 pb-3">
                           <p className="font-semibold text-gray-900 dark:text-white">{item.fullName}</p>
                           <p className="text-xs text-gray-500 dark:text-gray-400">{item.email} • {item.role}</p>
+                          <div className="mt-2">
+                            <button
+                              type="button"
+                              onClick={() => removeUser(item._id)}
+                              disabled={Boolean(updating[item._id]) || item._id === user?.id}
+                              className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-gray-200 dark:border-gray-700 text-gray-400 hover:text-red-500 hover:border-red-300 disabled:opacity-50"
+                              title="Remove user"
+                              aria-label="Remove user"
+                            >
+                              ×
+                            </button>
+                            {item._id === user?.id && (
+                              <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">Current user</span>
+                            )}
+                          </div>
                         </div>
                       ))
                     ) : (

@@ -7,5 +7,7 @@ const adminController = require('../controllers/adminController');
 router.use(authMiddleware, adminMiddleware);
 
 router.get('/overview', adminController.getOverview);
+router.get('/users', adminController.getUsers);
+router.delete('/users/:id', adminController.deleteUser);
 
 module.exports = router;

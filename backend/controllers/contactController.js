@@ -135,23 +135,30 @@ exports.updateContactStatus = async (req, res) => {
       });
     }
 
-    res.json({
-      success: true,
-      message: 'Contact status updated successfully',
-      contact
-    });
-
+    let emailNotification = { status: 'skipped' };
     try {
-      await sendStatusUpdateEmail({
+      const emailResult = await sendStatusUpdateEmail({
         to: contact.email,
         title: 'contact request',
         referenceId: contact._id.toString().slice(-8).toUpperCase(),
         status,
         summary: contact.subject ? `Subject: ${contact.subject}` : ''
       });
+
+      emailNotification = emailResult?.skipped
+        ? { status: 'skipped' }
+        : { status: 'sent', messageId: emailResult?.messageId || null };
     } catch (emailError) {
       console.error('❌ Failed to send contact status email:', emailError);
+      emailNotification = { status: 'failed', error: emailError.message };
     }
+
+    res.json({
+      success: true,
+      message: 'Contact status updated successfully',
+      contact,
+      emailNotification
+    });
   } catch (error) {
     console.error('❌ Error updating contact status:', error);
     res.status(500).json({

@@ -176,23 +176,30 @@ exports.updateFeedbackStatus = async (req, res) => {
       });
     }
 
-    res.json({
-      success: true,
-      message: 'Feedback status updated successfully',
-      feedback
-    });
-
+    let emailNotification = { status: 'skipped' };
     try {
-      await sendStatusUpdateEmail({
+      const emailResult = await sendStatusUpdateEmail({
         to: feedback.email,
         title: 'feedback ticket',
         referenceId: feedback.ticketNumber,
         status,
         summary: feedback.subject ? `Subject: ${feedback.subject}` : ''
       });
+
+      emailNotification = emailResult?.skipped
+        ? { status: 'skipped' }
+        : { status: 'sent', messageId: emailResult?.messageId || null };
     } catch (emailError) {
       console.error('❌ Failed to send feedback status email:', emailError);
+      emailNotification = { status: 'failed', error: emailError.message };
     }
+
+    res.json({
+      success: true,
+      message: 'Feedback status updated successfully',
+      feedback,
+      emailNotification
+    });
   } catch (error) {
     console.error('❌ Error updating feedback status:', error);
     res.status(500).json({

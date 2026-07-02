@@ -583,6 +583,8 @@ export default function ThemeToggle({ newsData = [], selectedCompany, onOpenDash
         </svg>
       </button>
 
+      
+
       {/* Dashboard Button */}
       <button
         onClick={() => onOpenDashboard && onOpenDashboard()}
@@ -741,6 +743,8 @@ export default function ThemeToggle({ newsData = [], selectedCompany, onOpenDash
         )}
         </div>
       )}
+
+      
 
       {/* Gmail-style Sidebar Button */}
       <button

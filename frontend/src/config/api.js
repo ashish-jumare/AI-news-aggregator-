@@ -43,8 +43,12 @@ export const API_ENDPOINTS = {
 
   // Admin endpoints
   ADMIN_OVERVIEW: `${API_BASE_URL}/api/admin/overview`,
+  ADMIN_USERS: `${API_BASE_URL}/api/admin/users`,
+  ADMIN_DELETE_USER: (id) => `${API_BASE_URL}/api/admin/users/${id}`,
   ADMIN_FEEDBACK_STATUS: (id) => `${API_BASE_URL}/api/feedback/${id}/status`,
   ADMIN_CONTACT_STATUS: (id) => `${API_BASE_URL}/api/contacts/${id}/status`,
+  ADMIN_DELETE_FEEDBACK: (id) => `${API_BASE_URL}/api/feedback/${id}`,
+  ADMIN_DELETE_CONTACT: (id) => `${API_BASE_URL}/api/contacts/${id}`,
 };
 
 export default API_BASE_URL;
